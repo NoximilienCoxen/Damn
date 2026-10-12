@@ -7,12 +7,15 @@ Un platformer di esplorazione e puzzle, ironico e un po' assurdo. Il protagonist
 - Concept e game design: [`docs/CONCEPT.md`](docs/CONCEPT.md)
 - Diario di bordo (come è fatto l'engine, capitolo per capitolo): [`docs/diario/`](docs/diario/)
 
-## Stato: prototipo di una stanza
-Si può giocare la meccanica centrale in una stanza:
-- avvicinati alle cose: i sensi producono attributi (`VUOTO`, `VENTO`, `ECO`) e tre voci propongono un nome;
-- **affermare** un nome lo rende reale. Il `PONTE` regge, ma camminarci sopra lo consuma finché diventa `POSTE`;
-- **lasciar andare** scioglie le parole e per qualche secondo rivela il dungeon vero;
-- due finali per la stessa porta: nominarla ti riporta all'Atrio, lasciarla andare ti fa uscire.
+## Stato: prototipo di due stanze
+**La regola:** solo ciò che nomini regge. Il resto è vuoto, finché non lo lasci andare e scopri cosa c'era davvero.
+
+- **L'Atrio** insegna la regola: un vuoto, una sola parola da dire.
+- **L'Abisso** è il puzzle vero:
+  - avvicinati alle cose: i sensi producono attributi (`VUOTO`, `VENTO`, `ECO`) e tre voci propongono un nome;
+  - **affermare** un nome lo rende reale. Il `PONTE` regge, ma camminarci sopra lo consuma finché diventa `POSTE`;
+  - **lasciar andare** scioglie le parole e per qualche secondo rivela il dungeon vero;
+  - due finali per la stessa porta: nominarla ti riporta all'Atrio, lasciarla andare ti fa uscire.
 
 ## Comandi
 

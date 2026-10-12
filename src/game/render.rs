@@ -8,9 +8,12 @@
 //! 5. glow: tutto ciò che emette luce è stato disegnato anche nel buffer
 //!    `luce`, che viene sfocato e sommato all'immagine;
 //! 6. interfaccia (biglietti, messaggi, suggerimenti), nitida sopra il glow.
+//!
+//! Prima del glow c'è anche il "vuoto visibile": pulviscolo che cade nelle
+//! colonne dove sotto i piedi non c'è niente di nominato.
 
 use super::lessico::{Natura, Voce};
-use super::livello::{BIGLIETTI, COLONNE, LANTERNE, RIGHE, TILE};
+use super::livello::{COLONNE, RIGHE, TILE};
 use super::mondo::{Fase, Mondo, Reale};
 use super::{Egresso, Scena};
 use crate::engine::app::{Stats, ALTEZZA, LARGHEZZA};
@@ -42,6 +45,7 @@ impl Egresso {
         }
 
         self.disegna_realta(fb);
+        self.disegna_vuoto(fb);
         self.disegna_nomi(fb);
         self.disegna_proposte(fb);
         self.disegna_biglietti(fb);
@@ -85,13 +89,52 @@ impl Egresso {
         }
     }
 
+    /// Dove sotto i piedi non c'è niente che regga, il pulviscolo cade:
+    /// si vede dove si precipita.
+    fn disegna_vuoto(&mut self, fb: &mut Framebuffer) {
+        let g = self.giocatore.rect();
+        let piedi = ((g.bottom() + 1.0) / TILE as f32).floor() as i32;
+        let y0 = piedi * TILE;
+        let altezza = (ALTEZZA as i32 - y0).max(1);
+        let col = rgb(150, 140, 200);
+        for tx in 0..COLONNE {
+            if !self.mondo.colonna_vuota(tx, piedi) {
+                continue;
+            }
+            for k in 0..6 {
+                let h = hash01(tx, k, 17);
+                let vel = 30.0 + 40.0 * hash01(tx, k, 18);
+                let dy = ((self.t * vel + h * altezza as f32) % altezza as f32) as i32;
+                let x = tx * TILE + (hash01(tx, k, 19) * 7.0) as i32;
+                let y = y0 + dy;
+                // Più giù, più si spegne: il vuoto inghiotte.
+                let a = (1.0 - dy as f32 / altezza as f32) * 210.0;
+                fb.blend_pixel(x, y, col, a as u8);
+                fb.blend_pixel(x, y - 1, col, (a * 0.5) as u8);
+                fb.blend_pixel(x, y - 2, col, (a * 0.25) as u8);
+            }
+        }
+    }
+
     fn disegna_nomi(&mut self, fb: &mut Framebuffer) {
         for ty in 0..RIGHE {
             for tx in 0..COLONNE {
                 let Some(c) = self.mondo.cella(tx, ty) else { continue };
                 let p = &self.mondo.percetti[c.percetto as usize];
+                // Appena affermata, la parola si accende di colpo.
+                let lampo = match self.lampo {
+                    Some((i, t)) if i == c.percetto as usize => t / 0.35,
+                    _ => 0.0,
+                };
+                // Il bordo superiore di ciò che regge: qui si può stare.
+                if c.natura.regge() && self.mondo.solido(tx, ty - 1).is_none() {
+                    let bordo = scala(c.voce.colore(), 0.5 + lampo);
+                    for dx in 0..TILE {
+                        fb.blend_pixel(tx * TILE + dx, ty * TILE, bordo, 70);
+                    }
+                }
                 // La certezza si vede: le parole marce sfarfallano.
-                let k = 0.45 + 0.55 * p.certezza;
+                let k = 0.45 + 0.55 * p.certezza + lampo;
                 if p.certezza < 0.45 && hash01(tx, ty, (self.t * 12.0) as u32) < 0.12 {
                     continue;
                 }
@@ -179,7 +222,7 @@ impl Egresso {
     }
 
     fn disegna_biglietti(&mut self, fb: &mut Framebuffer) {
-        for (i, (col, _)) in BIGLIETTI.iter().enumerate() {
+        for (i, (col, _)) in self.mondo.stanza.biglietti.iter().enumerate() {
             let x = col * TILE + 2;
             let y = 17 * TILE - 3;
             let vicino = self.biglietto == Some(i);
@@ -250,15 +293,17 @@ impl Egresso {
             self.font.draw_centered(fb, w / 2, 66, "IL MONDO E' CIO' CHE DICI CHE SIA.", rgb(150, 140, 190), (a * 200.0) as u8);
         }
 
-        // Suggerimenti dei comandi, finché non li hai usati tutti.
-        if self.t > 2.0 && !self.usati.iter().all(|&u| u) {
-            let a = ((self.t - 2.0) / 1.0).clamp(0.0, 1.0);
-            self.font.draw_centered(fb, w / 2, 171, "E AFFERMA   Q ALTRA VOCE   R LASCIA ANDARE", rgb(120, 112, 150), (a * 170.0) as u8);
+        // Il nome della stanza, entrando (non sopra il titolo iniziale).
+        if self.t > 3.5 && self.t_stanza < 2.5 {
+            let a = (if self.t_stanza < 1.5 { 1.0 } else { (2.5 - self.t_stanza) / 1.0 }).clamp(0.0, 1.0);
+            testo_grande(&self.font, fb, w / 2, 30, self.mondo.stanza.nome, rgb(240, 232, 214), (a * 230.0) as u8, 2);
         }
+
+        self.disegna_suggerimento(fb);
 
         // Il biglietto vicino (non mentre c'è il titolo).
         if let Some(i) = self.biglietto.filter(|_| self.t > 3.0) {
-            let righe = BIGLIETTI[i].1;
+            let righe = self.mondo.stanza.biglietti[i].1;
             for (k, r) in righe.iter().enumerate() {
                 self.font.draw_centered(fb, w / 2, 12 + k as i32 * 9, r, CARTA, if k == 0 { 130 } else { 220 });
             }
@@ -318,6 +363,59 @@ impl Egresso {
 /// Sposta una x perché un testo largo `larg` resti dentro lo schermo.
 fn dentro_schermo(x: i32, larg: i32) -> i32 {
     x.clamp(2, LARGHEZZA as i32 - 2 - larg)
+}
+
+impl Egresso {
+    /// Sopra il protagonista: quali tasti servono adesso, per ciò che è a
+    /// fuoco. Ogni suggerimento sparisce dopo che il tasto è stato usato due volte.
+    fn disegna_suggerimento(&mut self, fb: &mut Framebuffer) {
+        if self.scena != Scena::Gioco || self.t < 2.5 {
+            return;
+        }
+        let Some(i) = self.focus else { return };
+        let p = &self.mondo.percetti[i];
+        // Nell'Atrio si impara una cosa sola: dire.
+        let r_ok = self.stanza > 0 && self.usati[2] < 2;
+        let mut parti: [&str; 3] = [""; 3];
+        let mut n = 0;
+        match p.fase {
+            Fase::Proposto => {
+                if self.usati[0] < 2 {
+                    parti[n] = "E DILLO";
+                    n += 1;
+                }
+                if p.def.proposte.len() > 1 && self.usati[1] < 2 {
+                    parti[n] = "Q ALTRA VOCE";
+                    n += 1;
+                }
+                if r_ok {
+                    parti[n] = "R LASCIA";
+                    n += 1;
+                }
+            }
+            Fase::Affermato if p.def.iniziale.is_none() && r_ok => {
+                parti[n] = "R LASCIA ANDARE";
+                n += 1;
+            }
+            _ => {}
+        }
+        if n == 0 {
+            return;
+        }
+        let mut buf = [0u8; 64];
+        let testo = match n {
+            1 => scrivi(&mut buf, format_args!("{}", parti[0])),
+            2 => scrivi(&mut buf, format_args!("{}  {}", parti[0], parti[1])),
+            _ => scrivi(&mut buf, format_args!("{}  {}  {}", parti[0], parti[1], parti[2])),
+        };
+        let g = self.giocatore.rect();
+        let larg = misura(testo);
+        let x = dentro_schermo(g.center().x as i32 - larg / 2, larg);
+        let y = (g.y as i32 - 12).max(2);
+        // Un fondo scuro per leggerlo sopra le lettere luminose.
+        fb.fill_rect(x - 2, y - 2, larg + 4, 11, rgb(6, 5, 12));
+        self.font.draw_text_alpha(fb, x, y, testo, rgb(214, 206, 240), 230);
+    }
 }
 
 /// Formatta in un buffer sullo stack: niente `String`, niente allocazioni.
@@ -414,7 +512,7 @@ pub fn genera_realta(mondo: &Mondo) -> (Vec<u32>, Vec<u32>) {
                 // Luce delle lanterne e del varco.
                 let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
                 let mut l = 0.32;
-                for &(lx, ly) in LANTERNE {
+                for &(lx, ly) in mondo.stanza.lanterne {
                     let c = Vec2::new((lx * t + 4) as f32, (ly * t + 3) as f32);
                     l += (1.0 - (p - c).len() / 100.0).max(0.0).powf(1.5) * 1.3;
                 }
@@ -430,7 +528,7 @@ pub fn genera_realta(mondo: &Mondo) -> (Vec<u32>, Vec<u32>) {
     // Le lanterne: catena e corpo luminoso.
     let mut fb = Framebuffer::new(LARGHEZZA, ALTEZZA);
     fb.pixel_mut().copy_from_slice(&img);
-    for &(lx, ly) in LANTERNE {
+    for &(lx, ly) in mondo.stanza.lanterne {
         let (x, y) = (lx * t + 4, ly * t);
         fb.fill_rect(x, y - 20, 1, 20, rgb(90, 80, 70));
         fb.fill_rect(x - 2, y, 5, 1, rgb(110, 90, 60));

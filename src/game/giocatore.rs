@@ -6,7 +6,7 @@
 //! (angoli che "agganciano", teletrasporti).
 
 use super::lessico::Natura;
-use super::livello::{COLONNE, PARTENZA, TILE};
+use super::livello::{COLONNE, TILE};
 use super::mondo::Mondo;
 use crate::engine::input::{Input, Key};
 use crate::engine::math::{Rect, Vec2};
@@ -46,8 +46,8 @@ pub enum Esito {
 }
 
 impl Giocatore {
-    pub fn new() -> Giocatore {
-        let p = Vec2::new(PARTENZA.0, PARTENZA.1);
+    pub fn new(partenza: (f32, f32)) -> Giocatore {
+        let p = Vec2::new(partenza.0, partenza.1);
         Giocatore { pos: p, vel: Vec2::ZERO, a_terra: false, sotto: None, verso: 1.0, passo: 0.0, coyote: 0.0, buffer: 0.0, sicuro: p }
     }
 
@@ -184,12 +184,6 @@ impl Giocatore {
     }
 }
 
-impl Default for Giocatore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 fn avvicina(v: f32, obiettivo: f32, passo: f32) -> f32 {
     if v < obiettivo {
         (v + passo).min(obiettivo)
@@ -201,11 +195,12 @@ fn avvicina(v: f32, obiettivo: f32, passo: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::livello::ABISSO;
 
     #[test]
     fn sta_in_piedi_sul_pavimento_nominato() {
-        let mut m = Mondo::new();
-        let mut g = Giocatore::new();
+        let mut m = Mondo::new(&ABISSO);
+        let mut g = Giocatore::new(ABISSO.partenza);
         let input = Input::new();
         for _ in 0..60 {
             g.update(&input, &mut m, true);
@@ -216,8 +211,8 @@ mod tests {
 
     #[test]
     fn nel_vuoto_si_cade() {
-        let mut m = Mondo::new();
-        let mut g = Giocatore::new();
+        let mut m = Mondo::new(&ABISSO);
+        let mut g = Giocatore::new(ABISSO.partenza);
         g.pos.x = 150.0; // sopra l'abisso non nominato
         let input = Input::new();
         let mut caduto = false;
@@ -229,8 +224,8 @@ mod tests {
 
     #[test]
     fn il_muro_ferma() {
-        let mut m = Mondo::new();
-        let mut g = Giocatore::new();
+        let mut m = Mondo::new(&ABISSO);
+        let mut g = Giocatore::new(ABISSO.partenza);
         let mut input = Input::new();
         input.set(Key::Left, true);
         for _ in 0..120 {

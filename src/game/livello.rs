@@ -1,4 +1,4 @@
-//! La stanza del prototipo, descritta come dati.
+//! Le stanze del prototipo, descritte come dati.
 //!
 //! Due strati:
 //! - la **realtà** (ASCII qui sotto): com'è fatto davvero il dungeon. Si vede
@@ -11,36 +11,6 @@ use super::lessico::{self, Lemma, Voce};
 pub const COLONNE: i32 = 40;
 pub const RIGHE: i32 = 22;
 pub const TILE: i32 = 8;
-
-/// La realtà, una riga per fila di tile.
-/// `#` roccia, `=` gradino di pietra, `O` varco verso l'esterno, `.` vuoto.
-pub const REALTA: [&str; RIGHE as usize] = [
-    "########################################",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................#",
-    "#......................................O",
-    "#......................................O",
-    "###############..........###############",
-    "###############==========###############",
-    "########################################",
-    "########################################",
-    "########################################",
-];
-
-/// Lanterne della realtà (in tile): illuminano ciò che viene rivelato.
-pub const LANTERNE: &[(i32, i32)] = &[(19, 9), (33, 9), (7, 8)];
 
 pub struct DefProposta {
     pub voce: Voce,
@@ -78,59 +48,170 @@ const fn p(voce: Voce, lemma: &'static Lemma, x: i32, y: i32, verticale: bool, c
 
 use Voce::*;
 
-pub static PERCETTI: &[DefPercetto] = &[
-    // Il muro alle spalle: il protagonista l'ha già nominato.
-    DefPercetto {
-        area: (0, 4, 0, 16),
-        attributi: &["FREDDO", "RUVIDO"],
-        proposte: &[p(Controllo, &lessico::MURO, 0, 4, true, 13)],
-        iniziale: Some(0),
-    },
-    DefPercetto {
-        area: (1, 17, 14, 17),
-        attributi: &["DURO"],
-        proposte: &[p(Controllo, &lessico::PAVIMENTO, 1, 17, false, 14)],
-        iniziale: Some(0),
-    },
-    // L'abisso: il cuore del puzzle. In realtà è un gradino.
-    DefPercetto {
-        area: (15, 14, 24, 21),
-        attributi: &["VUOTO", "VENTO", "ECO"],
-        proposte: &[
-            p(Controllo, &lessico::PONTE, 15, 17, false, 10),
-            p(Paura, &lessico::BURRONE, 21, 15, true, 7),
-            p(Memoria, &lessico::FRIGO, 19, 16, true, 5),
-        ],
-        iniziale: None,
-    },
-    DefPercetto {
-        area: (25, 17, 38, 17),
-        attributi: &["DURO"],
-        proposte: &[p(Controllo, &lessico::PAVIMENTO, 25, 17, false, 14)],
-        iniziale: Some(0),
-    },
-    // L'uscita. Nominarla come PORTA riporta all'Atrio.
-    DefPercetto {
-        area: (36, 9, 38, 16),
-        attributi: &["LEGNO", "SPIFFERO"],
-        proposte: &[
-            p(Controllo, &lessico::PORTA, 38, 12, true, 5),
-            p(Paura, &lessico::TRAPPOLA, 37, 9, true, 8),
-            p(Memoria, &lessico::ARMADIO, 36, 10, true, 7),
-        ],
-        iniziale: None,
-    },
-];
+/// Una stanza: la sua realtà, le sue percezioni, i suoi biglietti.
+pub struct Stanza {
+    pub nome: &'static str,
+    /// La realtà, una riga per fila di tile.
+    /// `#` roccia, `=` gradino di pietra, `O` varco verso l'esterno, `.` vuoto.
+    pub realta: [&'static str; RIGHE as usize],
+    /// Lanterne della realtà (in tile): illuminano ciò che viene rivelato.
+    pub lanterne: &'static [(i32, i32)],
+    pub percetti: &'static [DefPercetto],
+    /// I biglietti che il protagonista si è lasciato: (colonna, righe di testo).
+    pub biglietti: &'static [(i32, &'static [&'static str])],
+    /// Dove nasce il protagonista (in pixel, angolo in alto a sinistra).
+    pub partenza: (f32, f32),
+    /// Camminando oltre il bordo destro si passa alla stanza successiva.
+    pub uscita_destra: bool,
+}
 
-/// I biglietti che il protagonista si è lasciato: (colonna, righe di testo).
-pub const BIGLIETTI: &[(i32, &[&str])] = &[
-    (5, &["NOTA PER ME:", "QUELLO CHE NOMINO, REGGE."]),
-    (13, &["NOTA PER ME:", "NON FIDARTI DELLA PAPERELLA."]),
-    (31, &["NOTA PER ME:", "OGNI PORTA CHE HO NOMINATO", "MI HA RIPORTATO QUI."]),
-];
+const PARTENZA: (f32, f32) = (32.0, (17 * TILE - 12) as f32);
 
-/// Dove nasce il protagonista (in pixel, angolo in alto a sinistra).
-pub const PARTENZA: (f32, f32) = (32.0, (17 * TILE - 12) as f32);
+/// Stanza 0, l'Atrio: insegna una sola cosa. Il vuoto non regge finché non
+/// lo nomini. (È anche il posto in cui ti riporta ogni PORTA nominata.)
+pub static ATRIO: Stanza = Stanza {
+    nome: "L'ATRIO",
+    realta: [
+        "########################################",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#.......................................",
+        "#.......................................",
+        "########################################",
+        "########################################",
+        "########################################",
+        "########################################",
+        "########################################",
+    ],
+    lanterne: &[(6, 8), (18, 9), (31, 8)],
+    percetti: &[
+        DefPercetto {
+            area: (0, 4, 0, 16),
+            attributi: &["FREDDO", "RUVIDO"],
+            proposte: &[p(Controllo, &lessico::MURO, 0, 4, true, 13)],
+            iniziale: Some(0),
+        },
+        DefPercetto {
+            area: (1, 17, 12, 17),
+            attributi: &["DURO"],
+            proposte: &[p(Controllo, &lessico::PAVIMENTO, 1, 17, false, 12)],
+            iniziale: Some(0),
+        },
+        // Il primo vuoto: una voce sola, una parola sola.
+        DefPercetto {
+            area: (13, 14, 22, 21),
+            attributi: &["VUOTO"],
+            proposte: &[p(Controllo, &lessico::PONTE_SALDO, 13, 17, false, 10)],
+            iniziale: None,
+        },
+        DefPercetto {
+            area: (23, 17, 39, 17),
+            attributi: &["DURO"],
+            proposte: &[p(Controllo, &lessico::PAVIMENTO, 23, 17, false, 17)],
+            iniziale: Some(0),
+        },
+    ],
+    biglietti: &[
+        (9, &["NOTA PER ME:", "QUELLO CHE NON NOMINO, NON C'È."]),
+        (29, &["NOTA PER ME:", "DI LÀ C'È UN ABISSO VERO.", "O QUASI."]),
+    ],
+    partenza: PARTENZA,
+    uscita_destra: true,
+};
+
+/// Stanza 1, l'Abisso: tre voci, una porta, due finali.
+pub static ABISSO: Stanza = Stanza {
+    nome: "L'ABISSO",
+    realta: [
+        "########################################",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................#",
+        "#......................................O",
+        "#......................................O",
+        "###############..........###############",
+        "###############==========###############",
+        "########################################",
+        "########################################",
+        "########################################",
+    ],
+    lanterne: &[(19, 9), (33, 9), (7, 8)],
+    percetti: &[
+        // Il muro alle spalle: il protagonista l'ha già nominato.
+        DefPercetto {
+            area: (0, 4, 0, 16),
+            attributi: &["FREDDO", "RUVIDO"],
+            proposte: &[p(Controllo, &lessico::MURO, 0, 4, true, 13)],
+            iniziale: Some(0),
+        },
+        DefPercetto {
+            area: (1, 17, 14, 17),
+            attributi: &["DURO"],
+            proposte: &[p(Controllo, &lessico::PAVIMENTO, 1, 17, false, 14)],
+            iniziale: Some(0),
+        },
+        // L'abisso: il cuore del puzzle. In realtà è un gradino.
+        DefPercetto {
+            area: (15, 14, 24, 21),
+            attributi: &["VUOTO", "VENTO", "ECO"],
+            proposte: &[
+                p(Controllo, &lessico::PONTE, 15, 17, false, 10),
+                p(Paura, &lessico::BURRONE, 21, 15, true, 7),
+                p(Memoria, &lessico::FRIGO, 19, 16, true, 5),
+            ],
+            iniziale: None,
+        },
+        DefPercetto {
+            area: (25, 17, 38, 17),
+            attributi: &["DURO"],
+            proposte: &[p(Controllo, &lessico::PAVIMENTO, 25, 17, false, 14)],
+            iniziale: Some(0),
+        },
+        // L'uscita. Nominarla come PORTA riporta all'Atrio.
+        DefPercetto {
+            area: (36, 9, 38, 16),
+            attributi: &["LEGNO", "SPIFFERO"],
+            proposte: &[
+                p(Controllo, &lessico::PORTA, 38, 12, true, 5),
+                p(Paura, &lessico::TRAPPOLA, 37, 9, true, 8),
+                p(Memoria, &lessico::ARMADIO, 36, 10, true, 7),
+            ],
+            iniziale: None,
+        },
+    ],
+    biglietti: &[
+        (5, &["NOTA PER ME:", "QUELLO CHE NOMINO, REGGE.", "MA NON PER SEMPRE."]),
+        (13, &["NOTA PER ME:", "NON FIDARTI DELLA PAPERELLA."]),
+        (31, &["NOTA PER ME:", "OGNI PORTA CHE HO NOMINATO", "MI HA RIPORTATO QUI."]),
+    ],
+    partenza: PARTENZA,
+    uscita_destra: false,
+};
+
+pub static STANZE: [&Stanza; 2] = [&ATRIO, &ABISSO];
 
 #[cfg(test)]
 mod tests {
@@ -138,18 +219,33 @@ mod tests {
 
     #[test]
     fn la_realta_e_rettangolare() {
-        for r in REALTA {
-            assert_eq!(r.chars().count(), COLONNE as usize, "{r}");
+        for st in STANZE {
+            for r in st.realta {
+                assert_eq!(r.chars().count(), COLONNE as usize, "{}: {r}", st.nome);
+            }
         }
     }
 
     #[test]
     fn le_proposte_stanno_nella_stanza() {
-        for d in PERCETTI {
-            for pr in d.proposte {
-                for i in 0..pr.celle {
-                    let (x, y) = pr.cella(i);
-                    assert!((0..COLONNE).contains(&x) && (0..RIGHE).contains(&y));
+        for st in STANZE {
+            for d in st.percetti {
+                for pr in d.proposte {
+                    for i in 0..pr.celle {
+                        let (x, y) = pr.cella(i);
+                        assert!((0..COLONNE).contains(&x) && (0..RIGHE).contains(&y), "{}", st.nome);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn i_biglietti_entrano_nello_schermo() {
+        for st in STANZE {
+            for (_, righe) in st.biglietti {
+                for r in *righe {
+                    assert!(crate::engine::font::misura(r) <= 316, "biglietto troppo lungo: {r}");
                 }
             }
         }

@@ -1,6 +1,6 @@
 # 03: Il prototipo
 
-Il gioco (`src/game/`) usa l'engine per mettere in scena una stanza: un abisso, una porta, tre voci.
+Il gioco (`src/game/`) usa l'engine per mettere in scena due stanze: l'Atrio, dove si impara a nominare, e l'Abisso, con tre voci, un abisso e una porta.
 
 ```
 game/
@@ -76,6 +76,23 @@ Ci sono anche strade assurde: `FRIGO` come pilastro a metà abisso, `TRAPPOLA` c
 - Le proposte all'inizio sembravano parole già vere, perché avevano lo stesso colore pieno. Adesso sono **retinate**: l'incertezza si vede.
 - Le tre proposte della porta, sulla stessa colonna, erano illeggibili: ora stanno su colonne vicine.
 - Il titolo copriva il primo biglietto.
+
+## Il primo test vero: "cammino nell'aria?"
+Provato da telefono, il prototipo non si capiva. La regola (solo ciò che nomini regge) era giusta ma **invisibile**:
+- il buio del vuoto era identico allo sfondo;
+- le proposte sembravano già oggetti;
+- l'unico suggerimento era una riga fissa in basso, staccata da ciò che stavi guardando;
+- cadendo, la Paura diceva "VISTO? BURRONE.", che non spiega niente.
+
+Correzioni, tutte nel segno del "mostrare, non spiegare":
+1. **Una stanza in più, l'Atrio** (`livello.rs` ora contiene una lista di `Stanza`). Contiene un vuoto, una voce sola e una parola sola. Ci si cade una volta e si capisce. La PORTA nominata nell'Abisso riporta qui: il loop dell'episodio diventa letterale.
+2. **Il vuoto si vede:** `Mondo::colonna_vuota` dice se sotto un punto non c'è niente che regga, e lì il render fa cadere pulviscolo.
+3. **Bordo luminoso** sopra ciò che regge, **sbriciolamento** delle lettere solo proposte quando ci passi sopra.
+4. **Suggerimenti contestuali** sopra il personaggio, che si spengono dopo due usi (un contatore per tasto).
+5. **Messaggi di caduta che insegnano:** la prima volta "QUELLO CHE NON DICO, NON C'È.", sopra una proposta "NON L'AVEVO DETTO.".
+6. **Un lampo** quando affermi: la parola passa da tratteggiata a piena e si accende.
+
+Lezione di design: una regola forte va insegnata con una stanza che contiene *solo* quella regola. Poi si aggiungono le complicazioni.
 
 ## Cosa manca (prossimi passi)
 - Luce con ombre proiettate dalle lettere sulle lettere.

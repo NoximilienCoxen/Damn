@@ -5,7 +5,7 @@
 //! cambia (una parola affermata, una lettera caduta), non a ogni frame.
 
 use super::lessico::{Natura, Voce};
-use super::livello::{DefPercetto, COLONNE, PERCETTI, REALTA, RIGHE, TILE};
+use super::livello::{DefPercetto, Stanza, COLONNE, RIGHE, TILE};
 use crate::engine::math::{Rect, Vec2};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +106,7 @@ pub enum Evento {
 }
 
 pub struct Mondo {
+    pub stanza: &'static Stanza,
     pub reale: Vec<Reale>,
     pub mappa: Vec<Option<Cella>>,
     pub percetti: Vec<Percetto>,
@@ -118,9 +119,9 @@ const DIST_SENSI: f32 = 28.0;
 const TEMPO_SENSI: f32 = 0.9;
 
 impl Mondo {
-    pub fn new() -> Mondo {
+    pub fn new(stanza: &'static Stanza) -> Mondo {
         let mut reale = Vec::with_capacity((COLONNE * RIGHE) as usize);
-        for riga in REALTA {
+        for riga in stanza.realta {
             for c in riga.chars() {
                 reale.push(match c {
                     '#' => Reale::Roccia,
@@ -130,7 +131,8 @@ impl Mondo {
                 });
             }
         }
-        let percetti = PERCETTI
+        let percetti = stanza
+            .percetti
             .iter()
             .map(|def| Percetto {
                 def,
@@ -143,6 +145,7 @@ impl Mondo {
             })
             .collect();
         let mut m = Mondo {
+            stanza,
             reale,
             mappa: vec![None; (COLONNE * RIGHE) as usize],
             percetti,
@@ -201,6 +204,30 @@ impl Mondo {
             let centro = Vec2::new((tx * TILE + TILE / 2) as f32, (ty * TILE + TILE / 2) as f32);
             if self.rivelato(centro) > 0.5 {
                 return Some(Natura::Solida);
+            }
+        }
+        None
+    }
+
+    /// `true` se nella colonna `tx`, dalla riga `da` in giù, non c'è niente
+    /// che regga: lì si precipita.
+    pub fn colonna_vuota(&self, tx: i32, da: i32) -> bool {
+        (da.max(0)..RIGHE).all(|ty| self.solido(tx, ty).is_none())
+    }
+
+    /// Il percetto con proposte aperte che occupa la cella (tx, ty), se c'è
+    /// (le parole proposte si vedono ma non reggono).
+    pub fn proposta_in(&self, tx: i32, ty: i32) -> Option<(usize, Voce)> {
+        for (i, p) in self.percetti.iter().enumerate() {
+            if p.fase != Fase::Proposto {
+                continue;
+            }
+            for (j, pr) in p.def.proposte.iter().enumerate() {
+                for k in 0..pr.celle {
+                    if pr.cella(k) == (tx, ty) && p.lettera(j, k, 0) != ' ' {
+                        return Some((i, pr.voce));
+                    }
+                }
             }
         }
         None
@@ -361,12 +388,6 @@ impl Mondo {
     }
 }
 
-impl Default for Mondo {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Distanza da un punto al rettangolo (0 se è dentro).
 pub fn distanza_rect(p: Vec2, r: &Rect) -> f32 {
     let dx = (r.x - p.x).max(0.0).max(p.x - r.right());
@@ -378,7 +399,10 @@ pub fn distanza_rect(p: Vec2, r: &Rect) -> f32 {
 mod tests {
     use super::*;
 
+    use crate::game::livello::{ABISSO as STANZA_ABISSO, ATRIO};
+
     const ABISSO: usize = 2;
+    const VUOTO_ATRIO: usize = 2;
 
     fn corpo_a(x: f32, y: f32) -> Rect {
         Rect::new(x, y, 6.0, 12.0)
@@ -386,7 +410,7 @@ mod tests {
 
     #[test]
     fn il_pavimento_iniziale_regge_l_abisso_no() {
-        let m = Mondo::new();
+        let m = Mondo::new(&STANZA_ABISSO);
         assert!(m.solido(3, 17).is_some(), "PAVIMENTO a sinistra");
         assert!(m.solido(18, 17).is_none(), "l'abisso non nominato non regge");
         assert!(m.solido(18, 18).is_none(), "il gradino reale non si tocca senza rivelazione");
@@ -394,7 +418,7 @@ mod tests {
 
     #[test]
     fn avvicinarsi_fa_nascere_le_proposte() {
-        let mut m = Mondo::new();
+        let mut m = Mondo::new(&STANZA_ABISSO);
         let corpo = corpo_a(112.0, 124.0); // sul bordo dell'abisso
         for _ in 0..70 {
             m.update(1.0 / 60.0, corpo);
@@ -404,7 +428,7 @@ mod tests {
 
     #[test]
     fn affermare_il_ponte_lo_rende_solido_e_l_uso_lo_consuma() {
-        let mut m = Mondo::new();
+        let mut m = Mondo::new(&STANZA_ABISSO);
         m.percetti[ABISSO].fase = Fase::Proposto;
         assert!(m.afferma(ABISSO, corpo_a(32.0, 124.0)));
         assert!(m.solido(18, 17).is_some());
@@ -421,7 +445,7 @@ mod tests {
 
     #[test]
     fn lasciar_andare_rivela_il_gradino() {
-        let mut m = Mondo::new();
+        let mut m = Mondo::new(&STANZA_ABISSO);
         m.percetti[ABISSO].fase = Fase::Proposto;
         m.lascia(ABISSO);
         for _ in 0..30 {
@@ -435,8 +459,21 @@ mod tests {
     }
 
     #[test]
+    fn nell_atrio_il_vuoto_regge_solo_dopo_averlo_detto() {
+        let mut m = Mondo::new(&ATRIO);
+        assert!(m.solido(16, 17).is_none());
+        assert!(m.colonna_vuota(16, 17), "sotto il vuoto non c'è niente");
+        m.percetti[VUOTO_ATRIO].fase = Fase::Proposto;
+        assert!(m.proposta_in(16, 17).is_some(), "la proposta si vede...");
+        assert!(m.solido(16, 17).is_none(), "...ma non regge");
+        assert!(m.afferma(VUOTO_ATRIO, corpo_a(32.0, 124.0)));
+        assert!(m.solido(16, 17).is_some());
+        assert!(!m.colonna_vuota(16, 17));
+    }
+
+    #[test]
     fn non_si_nomina_un_muro_addosso() {
-        let mut m = Mondo::new();
+        let mut m = Mondo::new(&STANZA_ABISSO);
         m.percetti[ABISSO].fase = Fase::Proposto;
         // Il corpo è dove andrebbe il PONTE.
         assert!(!m.afferma(ABISSO, corpo_a(140.0, 132.0)));

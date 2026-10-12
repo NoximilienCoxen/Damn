@@ -1,4 +1,5 @@
-//! EGRESSO, il prototipo: una stanza, tre voci, un abisso che forse non lo è.
+//! EGRESSO, il prototipo: l'Atrio (dove si impara a nominare) e l'Abisso
+//! (tre voci, un abisso che forse non lo è, una porta e due finali).
 //!
 //! Comandi: frecce/A-D muovi, Spazio/W salta, E afferma, Q cambia voce,
 //! R lascia andare, F3 debug.
@@ -20,7 +21,7 @@ use crate::engine::time::DT;
 
 use giocatore::{Esito, Giocatore};
 use lessico::{Natura, Voce};
-use livello::{BIGLIETTI, TILE};
+use livello::{COLONNE, STANZE, TILE};
 use mondo::{distanza_rect, Evento, Fase, Mondo, Reale};
 use particelle::{Particella, Particelle};
 
@@ -52,9 +53,16 @@ pub struct Egresso {
     pub biglietto: Option<usize>,
     pub debug: bool,
     pub t: f32,
-    /// Quali comandi sono già stati usati (per far sparire i suggerimenti).
-    pub usati: [bool; 3],
+    /// Indice in `STANZE` della stanza attuale.
+    pub stanza: usize,
+    /// Secondi da quando si è entrati nella stanza (per il suo nome a schermo).
+    pub t_stanza: f32,
+    /// Quante volte sono stati usati E, Q, R (i suggerimenti si spengono).
+    pub usati: [u8; 3],
+    pub cadute: u32,
     pub ritorni_all_atrio: u32,
+    /// Percezione appena affermata e secondi di lampo rimasti.
+    pub lampo: Option<(usize, f32)>,
     rng: Rng,
     font: Font,
     luce: Framebuffer,
@@ -66,14 +74,14 @@ pub struct Egresso {
 
 impl Egresso {
     pub fn new() -> Egresso {
-        let mondo = Mondo::new();
+        let mondo = Mondo::new(STANZE[0]);
         let (realta, realta_luce) = render::genera_realta(&mondo);
         let mut rng = Rng::new(0x5eed);
         let polvere =
             (0..90).map(|_| ((rng.f32() * LARGHEZZA as f32) as i32, (rng.f32() * 130.0) as i32, (10.0 + rng.f32() * 22.0) as u8)).collect();
         Egresso {
             mondo,
-            giocatore: Giocatore::new(),
+            giocatore: Giocatore::new(STANZE[0].partenza),
             particelle: Particelle::new(),
             scena: Scena::Gioco,
             focus: None,
@@ -81,8 +89,12 @@ impl Egresso {
             biglietto: None,
             debug: false,
             t: 0.0,
-            usati: [false; 3],
+            stanza: 0,
+            t_stanza: 0.0,
+            usati: [0; 3],
+            cadute: 0,
             ritorni_all_atrio: 0,
+            lampo: None,
             rng,
             font: Font::new(),
             luce: Framebuffer::new(LARGHEZZA, ALTEZZA),
@@ -93,12 +105,64 @@ impl Egresso {
         }
     }
 
-    fn ricomincia_stanza(&mut self) {
-        self.mondo = Mondo::new();
-        self.giocatore = Giocatore::new();
+    /// Entra nella stanza `i` (dall'inizio). La texture della realtà viene
+    /// ridipinta: è l'unica allocazione, e succede solo al cambio di stanza.
+    fn vai_stanza(&mut self, i: usize) {
+        let stanza = STANZE[i];
+        self.stanza = i;
+        self.t_stanza = 0.0;
+        self.mondo = Mondo::new(stanza);
+        let (realta, luce) = render::genera_realta(&self.mondo);
+        self.realta = realta;
+        self.realta_luce = luce;
+        self.giocatore = Giocatore::new(stanza.partenza);
         self.particelle.clear();
         self.focus = None;
+        self.lampo = None;
         self.scena = Scena::Gioco;
+    }
+
+    /// Il protagonista è precipitato: riparte, e una voce commenta.
+    fn caduto(&mut self) {
+        let x = self.giocatore.rect().center().x;
+        // Era sopra una parola solo proposta?
+        let su_proposta = self.mondo.percetti.iter().any(|p| p.fase == Fase::Proposto && p.rect().x <= x && x <= p.rect().right());
+        self.cadute += 1;
+        if self.cadute == 1 {
+            self.dici(Voce::Controllo, "QUELLO CHE NON DICO, NON C'È.");
+        } else if su_proposta {
+            self.dici(Voce::Controllo, "NON L'AVEVO DETTO.");
+        } else {
+            self.dici(Voce::Paura, "VISTO? BURRONE.");
+        }
+        self.giocatore.riparti();
+    }
+
+    /// Le lettere solo proposte si sbriciolano sotto i piedi di chi ci passa.
+    fn sbriciola_proposte(&mut self) {
+        let g = self.giocatore.rect();
+        let t = TILE as f32;
+        let ty = ((g.bottom() + 1.0) / t).floor() as i32;
+        let (x0, x1) = ((g.x / t).floor() as i32, ((g.right() - 0.01) / t).floor() as i32);
+        for tx in x0..=x1 {
+            if let Some((_, voce)) = self.mondo.proposta_in(tx, ty) {
+                if self.rng.f32() < 0.5 {
+                    let pos = Vec2::new((tx * TILE) as f32 + self.rng.range(0.0, 7.0), (ty * TILE) as f32 + self.rng.range(0.0, 5.0));
+                    let vel = Vec2::new(self.rng.range(-6.0, 6.0), self.rng.range(10.0, 30.0));
+                    let vita = self.rng.range(0.5, 1.0);
+                    self.particelle.spawn(Particella {
+                        pos,
+                        vel,
+                        vita,
+                        durata: vita,
+                        colore: voce.colore(),
+                        lettera: ' ',
+                        gravita: 200.0,
+                        inclina: false,
+                    });
+                }
+            }
+        }
     }
 
     fn dici(&mut self, voce: Voce, testo: &'static str) {
@@ -272,7 +336,7 @@ impl Game for Egresso {
             Scena::Atrio(t) => {
                 self.scena = Scena::Atrio(t + DT);
                 if t > 2.8 {
-                    self.ricomincia_stanza();
+                    self.vai_stanza(0);
                 }
                 return;
             }
@@ -286,20 +350,33 @@ impl Game for Egresso {
             Scena::Gioco => {}
         }
 
+        self.t_stanza += DT;
+        if let Some((i, t)) = self.lampo {
+            self.lampo = if t - DT > 0.0 { Some((i, t - DT)) } else { None };
+        }
+
         if self.giocatore.update(input, &mut self.mondo, true) == Esito::Caduto {
-            self.giocatore.riparti();
-            self.dici(Voce::Paura, "VISTO? BURRONE.");
+            self.caduto();
+        }
+        self.sbriciola_proposte();
+
+        // Oltre il bordo destro: la stanza successiva.
+        let max_x = (COLONNE * TILE) as f32 - giocatore::LARG;
+        if self.mondo.stanza.uscita_destra && self.giocatore.pos.x >= max_x - 0.5 && self.stanza + 1 < STANZE.len() {
+            self.vai_stanza(self.stanza + 1);
+            return;
         }
 
         self.focus = self.scegli_focus();
         if let Some(i) = self.focus {
             if input.pressed(Key::Q) {
                 self.mondo.prossima_voce(i);
-                self.usati[1] = true;
+                self.usati[1] = self.usati[1].saturating_add(1);
             }
             if input.pressed(Key::E) && self.mondo.percetti[i].fase == Fase::Proposto {
                 if self.mondo.afferma(i, self.giocatore.rect()) {
-                    self.usati[0] = true;
+                    self.usati[0] = self.usati[0].saturating_add(1);
+                    self.lampo = Some((i, 0.35));
                     self.scintille_su(i, 3);
                 } else {
                     self.dici(Voce::Controllo, "NON QUI. CI SONO IO.");
@@ -307,7 +384,7 @@ impl Game for Egresso {
             }
             if input.pressed(Key::R) {
                 self.mondo.lascia(i);
-                self.usati[2] = true;
+                self.usati[2] = self.usati[2].saturating_add(1);
             }
         }
 
@@ -317,7 +394,7 @@ impl Game for Egresso {
         self.contatti();
 
         let cx = self.giocatore.rect().center().x;
-        self.biglietto = BIGLIETTI.iter().position(|(col, _)| (cx - (*col * TILE + 4) as f32).abs() < 14.0);
+        self.biglietto = self.mondo.stanza.biglietti.iter().position(|(col, _)| (cx - (*col * TILE + 4) as f32).abs() < 14.0);
         self.particelle.update(DT, &self.mondo);
     }
 
@@ -325,7 +402,8 @@ impl Game for Egresso {
         let g = &self.giocatore;
         let fasi: Vec<String> = self.mondo.percetti.iter().map(|p| format!("{:?}", p.fase).chars().take(4).collect()).collect();
         format!(
-            "pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
+            "stanza {} pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
+            self.stanza,
             g.pos.x,
             g.pos.y,
             g.vel.x,
@@ -339,5 +417,73 @@ impl Game for Egresso {
 
     fn render(&mut self, fb: &mut Framebuffer, stats: &Stats) {
         self.disegna(fb, stats);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Simula `passi` update con i tasti `giu` tenuti premuti; `tocca` viene
+    /// premuto a ogni passo (e rilasciato subito).
+    fn gioca(g: &mut Egresso, passi: usize, giu: &[Key], tocca: Option<Key>) {
+        let mut input = Input::new();
+        for _ in 0..passi {
+            for &k in giu {
+                input.set(k, true);
+            }
+            if let Some(k) = tocca {
+                input.set(k, true);
+            }
+            g.update(&input);
+            input.fine_passo();
+            if let Some(k) = tocca {
+                input.set(k, false);
+            }
+        }
+    }
+
+    #[test]
+    fn nell_atrio_si_cade_nel_vuoto_non_detto() {
+        let mut g = Egresso::new();
+        gioca(&mut g, 400, &[Key::Right], None);
+        assert_eq!(g.stanza, 0, "senza dire PONTE non si passa");
+        assert!(g.cadute >= 1);
+    }
+
+    #[test]
+    fn dicendo_ponte_si_arriva_all_abisso() {
+        let mut g = Egresso::new();
+        // Fino al bordo del vuoto, poi aspetta le proposte.
+        while g.giocatore.pos.x < 92.0 {
+            gioca(&mut g, 1, &[Key::Right], None);
+        }
+        gioca(&mut g, 90, &[], None);
+        assert_eq!(g.mondo.percetti[2].fase, Fase::Proposto);
+        gioca(&mut g, 1, &[], Some(Key::E));
+        assert_eq!(g.mondo.percetti[2].fase, Fase::Affermato);
+        for _ in 0..400 {
+            if g.stanza == 1 {
+                break;
+            }
+            gioca(&mut g, 1, &[Key::Right], None);
+        }
+        assert_eq!(g.stanza, 1, "oltre il bordo destro c'è l'Abisso");
+        assert_eq!(g.cadute, 0, "il PONTE detto regge");
+    }
+
+    #[test]
+    fn la_porta_nominata_riporta_all_atrio() {
+        let mut g = Egresso::new();
+        g.vai_stanza(1);
+        g.giocatore.pos.x = 280.0;
+        gioca(&mut g, 90, &[], None);
+        assert_eq!(g.mondo.percetti[4].fase, Fase::Proposto);
+        gioca(&mut g, 1, &[], Some(Key::E));
+        gioca(&mut g, 60, &[Key::Right], None);
+        assert!(matches!(g.scena, Scena::Atrio(_)));
+        gioca(&mut g, 200, &[], None);
+        assert_eq!(g.stanza, 0);
+        assert_eq!(g.scena, Scena::Gioco);
     }
 }

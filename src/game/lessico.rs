@@ -111,6 +111,10 @@ pub static MURO: Lemma =
 pub static PONTE: Lemma =
     Lemma { stati: &[st("PONTE", Solida, 0.66), st("PON E", Solida, 0.33), st("POSTE", Vuota, 0.0)], logorio: 0.012, logorio_uso: 0.22 };
 
+/// Il ponte dell'Atrio: il primo nome che dici. Non marcisce: prima si
+/// impara che nominare funziona, poi che consuma.
+pub static PONTE_SALDO: Lemma = Lemma { stati: &[st("PONTE", Solida, 0.0)], logorio: 0.0, logorio_uso: 0.0 };
+
 pub static BURRONE: Lemma = Lemma { stati: &[st("BURRONE", Vuota, 0.4), st("BURRO  ", Scivolosa, 0.0)], logorio: 0.05, logorio_uso: 0.0 };
 
 pub static FRIGO: Lemma =
@@ -127,7 +131,7 @@ pub static ARMADIO: Lemma = Lemma { stati: &[st("ARMADIO", Solida, 0.5), st("ARM
 mod tests {
     use super::*;
 
-    const TUTTI: &[&Lemma] = &[&PAVIMENTO, &MURO, &PONTE, &BURRONE, &FRIGO, &PORTA, &TRAPPOLA, &ARMADIO];
+    const TUTTI: &[&Lemma] = &[&PAVIMENTO, &MURO, &PONTE, &PONTE_SALDO, &BURRONE, &FRIGO, &PORTA, &TRAPPOLA, &ARMADIO];
 
     #[test]
     fn stati_della_stessa_lunghezza_e_soglie_decrescenti() {

@@ -5,6 +5,8 @@
 ## Il gancio
 **Il mondo è ciò che dici che sia. Per vederlo davvero devi smettere di nominarlo.**
 
+**La regola, in una riga:** solo ciò che nomini regge. Il resto è vuoto, finché non lo lasci andare e scopri cosa c'era davvero.
+
 Platformer di esplorazione e puzzle in vista laterale. Il protagonista è bendato in un dungeon senza uscita, e il mondo che attraversa è fatto delle **parole** con cui la sua mente prova a descriverlo.
 
 ## Ispirazione
@@ -58,6 +60,14 @@ Dagli attributi la mente prova a indovinare un **nome**. Lo propongono tre voci 
 - Quando lasci andare una parola, le sue lettere si sciolgono in **particelle di luce** e sotto, per qualche istante, **appare il dungeon vero**: pixel art illuminata, la cosa più bella del gioco.
 - La realtà spesso è diversa da come la temevi: il `BURRONE` della Paura era un gradino, il `MOSTRO` un'armatura vuota.
 - Cosa vale di più, una parola utile ma che marcisce o uno sguardo vero ma fugace? Da questa scelta nascono i puzzle.
+
+## 3b. Insegnare la regola senza spiegarla
+Il primo test vero (da telefono) ha mostrato che la regola non si capiva: "cammino nell'aria?". Ora la si impara giocando:
+- **L'Atrio**, la prima stanza, ha un solo vuoto e una sola proposta (`PONTE`). Se ci cammini sopra senza dirla cadi, e il Controllo dice "NON L'AVEVO DETTO.". Premi E e il ponte diventa solido.
+- **Il vuoto si vede:** dove sotto i piedi non c'è niente di nominato, il pulviscolo cade nel buio.
+- **Le proposte non reggono, e si vede:** le lettere tratteggiate si sbriciolano sotto i piedi.
+- **Cosa regge si vede:** ciò che è nominato ha un bordo luminoso sopra, il segno che ci si può stare.
+- **I suggerimenti compaiono sopra il personaggio**, solo per ciò che ha davanti ("E DILLO", "Q ALTRA VOCE", "R LASCIA"), e spariscono dopo due usi. Nell'Atrio si insegna solo E; R arriva nell'Abisso.
 
 ## 4. L'arco visivo è il messaggio
 Il messaggio non viene mai spiegato: lo raccontano i verbi e l'immagine.
