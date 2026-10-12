@@ -15,6 +15,7 @@
 use super::lessico::{Natura, Voce};
 use super::livello::{COLONNE, RIGHE, TILE};
 use super::mondo::{Fase, Mondo, Reale};
+use super::sala::comando;
 use super::{Egresso, Scena};
 use crate::engine::app::{Stats, ALTEZZA, LARGHEZZA};
 use crate::engine::font::{misura, Font, AVANZAMENTO};
@@ -23,7 +24,6 @@ use crate::engine::math::{hash01, Vec2};
 
 const SFONDO: u32 = rgb(6, 5, 12);
 const ATTRIBUTO: u32 = rgb(150, 140, 200);
-const CARTA: u32 = rgb(200, 190, 150);
 
 const BAYER: [[f32; 4]; 4] = [
     [0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0],
@@ -48,7 +48,6 @@ impl Egresso {
         self.disegna_vuoto(fb);
         self.disegna_nomi(fb);
         self.disegna_proposte(fb);
-        self.disegna_biglietti(fb);
         self.disegna_particelle(fb);
         self.disegna_giocatore(fb);
         self.disegna_sala(fb);
@@ -203,9 +202,12 @@ impl Egresso {
                 let testo = voce.nome();
                 let cx = dentro_schermo(cx - misura(testo) / 2 - 10, misura(testo) + 20) + misura(testo) / 2 + 10;
                 self.font.draw_centered(fb, cx, y, testo, voce.colore(), 220);
-                let mezza = misura(testo) / 2;
-                self.font.draw_text_alpha(fb, cx - mezza - 10, y, "<", voce.colore(), 120);
-                self.font.draw_text_alpha(fb, cx + mezza + 5, y, ">", voce.colore(), 120);
+                // Le frecce dicono "ci sono altre voci": solo se è vero e Q è sbloccato.
+                if p.def.proposte.len() > 1 && self.sbloccati & comando::VOCE != 0 {
+                    let mezza = misura(testo) / 2;
+                    self.font.draw_text_alpha(fb, cx - mezza - 10, y, "<", voce.colore(), 120);
+                    self.font.draw_text_alpha(fb, cx + mezza + 5, y, ">", voce.colore(), 120);
+                }
             }
         }
         // Angoli attorno a ciò che è a fuoco.
@@ -239,18 +241,6 @@ impl Egresso {
             let (x, y) = (x0 + i as i32 * PASSO, 62 + onda);
             self.font.draw_char(fb, x, y, c, colore, a, false);
             self.font.draw_char(&mut self.luce, x, y, c, scala(colore, 0.45 * alpha), 255, false);
-        }
-    }
-
-    fn disegna_biglietti(&mut self, fb: &mut Framebuffer) {
-        for (i, (col, _)) in self.mondo.stanza.biglietti.iter().enumerate() {
-            let x = col * TILE + 2;
-            let y = 17 * TILE - 3;
-            let vicino = self.biglietto == Some(i);
-            let c = if vicino { CARTA } else { scala(CARTA, 0.55) };
-            fb.fill_rect(x, y, 5, 3, c);
-            fb.set_pixel(x + 4, y, scala(c, 0.6));
-            self.luce.fill_rect(x, y, 5, 3, scala(c, 0.25));
         }
     }
 
@@ -322,13 +312,7 @@ impl Egresso {
 
         self.disegna_suggerimento(fb);
 
-        // Il biglietto vicino (non mentre c'è il titolo).
-        if let Some(i) = self.biglietto.filter(|_| self.t > 3.0) {
-            let righe = self.mondo.stanza.biglietti[i].1;
-            for (k, r) in righe.iter().enumerate() {
-                self.font.draw_centered(fb, w / 2, 12 + k as i32 * 9, r, CARTA, if k == 0 { 130 } else { 220 });
-            }
-        }
+        self.disegna_nuovo(fb);
 
         // La voce che commenta.
         if let Some(m) = &self.messaggio {
@@ -387,56 +371,89 @@ fn dentro_schermo(x: i32, larg: i32) -> i32 {
 }
 
 impl Egresso {
-    /// Sopra il protagonista: quali tasti servono adesso, per ciò che è a
-    /// fuoco. Ogni suggerimento sparisce dopo che il tasto è stato usato due volte.
+    /// Sopra il protagonista, una riga per ogni azione possibile adesso su
+    /// ciò che è a fuoco: un tasto disegnato e cosa fa, con la parola in
+    /// gioco ("[E] CHIAMALO PONTE"). Solo comandi già sbloccati; ogni riga
+    /// sparisce dopo che l'azione è stata fatta due volte.
     fn disegna_suggerimento(&mut self, fb: &mut Framebuffer) {
         if self.scena != Scena::Gioco || self.t < 2.5 {
             return;
         }
         let Some(i) = self.focus else { return };
         let p = &self.mondo.percetti[i];
-        // Nell'Atrio si impara una cosa sola: dire.
-        let r_ok = self.stanza > 0 && self.usati[2] < 2;
-        let mut parti: [&str; 3] = [""; 3];
-        let mut n = 0;
-        match p.fase {
-            Fase::Proposto => {
-                if self.usati[0] < 2 {
-                    parti[n] = "E DILLO";
-                    n += 1;
-                }
-                if p.def.proposte.len() > 1 && self.usati[1] < 2 {
-                    parti[n] = "Q ALTRA VOCE";
-                    n += 1;
-                }
-                if r_ok {
-                    parti[n] = "R LASCIA";
-                    n += 1;
-                }
-            }
-            Fase::Affermato if p.def.iniziale.is_none() && r_ok => {
-                parti[n] = "R LASCIA ANDARE";
-                n += 1;
-            }
-            _ => {}
+        let ha = |c: u8| self.sbloccati & c != 0;
+        let proposto = p.fase == Fase::Proposto;
+        let mio = p.fase == Fase::Affermato && p.def.iniziale.is_none();
+        let g = self.giocatore.rect();
+        let cx = g.center().x as i32;
+        let mut y = (g.y as i32 - 15).max(2);
+        let neutro = rgb(214, 206, 240);
+
+        if proposto && ha(comando::DI) && self.usati[0] < 2 {
+            let pr = &p.def.proposte[p.focus];
+            let parola = pr.lemma.stati[0].testo.trim();
+            let mut buf = [0u8; 64];
+            let testo = scrivi(&mut buf, format_args!("CHIAMALO {parola}"));
+            riga_comando(&self.font, fb, cx, y, &["E"], testo, pr.voce.colore());
+            y -= 13;
         }
-        if n == 0 {
+        if proposto && p.def.proposte.len() > 1 && ha(comando::VOCE) && self.usati[1] < 2 {
+            riga_comando(&self.font, fb, cx, y, &["Q"], "UN'ALTRA VOCE", Voce::Memoria.colore());
+            y -= 13;
+        }
+        if (proposto || mio) && ha(comando::LASCIA) && self.usati[2] < 2 {
+            riga_comando(&self.font, fb, cx, y, &["R"], "LASCIA ANDARE", neutro);
+        }
+    }
+
+    /// In basso, per qualche secondo: il comando appena sbloccato.
+    fn disegna_nuovo(&mut self, fb: &mut Framebuffer) {
+        let Some((c, t)) = self.nuovo else { return };
+        let a = (t / 0.3).min(1.0).min((4.0 - t) / 0.6).clamp(0.0, 1.0);
+        if a <= 0.0 {
             return;
         }
-        let mut buf = [0u8; 64];
-        let testo = match n {
-            1 => scrivi(&mut buf, format_args!("{}", parti[0])),
-            2 => scrivi(&mut buf, format_args!("{}  {}", parti[0], parti[1])),
-            _ => scrivi(&mut buf, format_args!("{}  {}  {}", parti[0], parti[1], parti[2])),
+        let (tasti, testo): (&[&str], &str) = if c & comando::MUOVI != 0 {
+            (&["<", ">"], "CAMMINA")
+        } else if c & comando::SALTA != 0 {
+            (&["SPAZIO"], "SALTA")
+        } else if c & comando::DI != 0 {
+            (&["E"], "DAI UN NOME")
+        } else if c & comando::VOCE != 0 {
+            (&["Q"], "ASCOLTA UN'ALTRA VOCE")
+        } else {
+            (&["R"], "LASCIA ANDARE")
         };
-        let g = self.giocatore.rect();
-        let larg = misura(testo);
-        let x = dentro_schermo(g.center().x as i32 - larg / 2, larg);
-        let y = (g.y as i32 - 12).max(2);
-        // Un fondo scuro per leggerlo sopra le lettere luminose.
-        fb.fill_rect(x - 2, y - 2, larg + 4, 11, rgb(6, 5, 12));
-        self.font.draw_text_alpha(fb, x, y, testo, rgb(214, 206, 240), 230);
+        let w = LARGHEZZA as i32;
+        let col = scala(rgb(240, 232, 214), a);
+        self.font.draw_centered(fb, w / 2, 152, "NUOVO", scala(rgb(150, 140, 200), a), 255);
+        riga_comando(&self.font, fb, w / 2, 164, tasti, testo, col);
     }
+}
+
+/// Disegna dei tasti (riquadri con un'etichetta) seguiti da un testo, il
+/// tutto centrato su `cx`, su un fondo scuro per leggerlo sopra le lettere.
+fn riga_comando(font: &Font, fb: &mut Framebuffer, cx: i32, y: i32, tasti: &[&str], testo: &str, colore: u32) {
+    let larg_tasti: i32 = tasti.iter().map(|t| misura(t) + 6).sum();
+    let larg = larg_tasti + misura(testo);
+    let mut x = dentro_schermo(cx - larg / 2, larg);
+    fb.fill_rect(x - 3, y - 3, larg + 6, 13, SFONDO);
+    for t in tasti {
+        let wt = misura(t) + 4;
+        // Il riquadro del tasto: come il pulsante sul telefono.
+        fb.fill_rect(x, y - 2, wt, 11, scala(colore, 0.18));
+        for dx in 0..wt {
+            fb.set_pixel(x + dx, y - 2, colore);
+            fb.set_pixel(x + dx, y + 8, colore);
+        }
+        for dy in -2..9 {
+            fb.set_pixel(x, y + dy, colore);
+            fb.set_pixel(x + wt - 1, y + dy, colore);
+        }
+        font.draw_text(fb, x + 2, y, t, colore);
+        x += wt + 2;
+    }
+    font.draw_text(fb, x + 2, y, testo, colore);
 }
 
 /// Formatta in un buffer sullo stack: niente `String`, niente allocazioni.

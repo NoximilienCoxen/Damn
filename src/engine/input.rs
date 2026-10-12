@@ -27,6 +27,25 @@ pub enum Key {
 
 const N: usize = Key::F3 as usize + 1;
 
+/// Tutti i tasti, nell'ordine della loro numerazione.
+const TUTTI: [Key; N] = [
+    Key::Left,
+    Key::Right,
+    Key::Up,
+    Key::Down,
+    Key::Space,
+    Key::A,
+    Key::D,
+    Key::E,
+    Key::Q,
+    Key::R,
+    Key::W,
+    Key::S,
+    Key::Enter,
+    Key::Escape,
+    Key::F3,
+];
+
 impl Key {
     /// Nome testuale (usato dagli script di input headless).
     pub fn from_name(s: &str) -> Option<Key> {
@@ -95,6 +114,20 @@ impl Input {
         self.qualcosa
     }
 
+    /// Una copia in cui i tasti per cui `consenti` dice `false` risultano
+    /// sempre su. Serve ai comandi "non ancora sbloccati". Nessuna allocazione.
+    pub fn filtra(&self, consenti: impl Fn(Key) -> bool) -> Input {
+        let mut f = Input { qualcosa: self.qualcosa, ..Input::default() };
+        for (i, &k) in TUTTI.iter().enumerate() {
+            if consenti(k) {
+                f.giu[i] = self.giu[i];
+                f.premuti[i] = self.premuti[i];
+                f.rilasciati[i] = self.rilasciati[i];
+            }
+        }
+        f
+    }
+
     /// Da chiamare dopo ogni passo di update.
     pub fn fine_passo(&mut self) {
         self.premuti = [false; N];
@@ -119,6 +152,23 @@ mod tests {
         assert!(i.pressed(Key::E) && i.down(Key::E));
         i.fine_passo();
         assert!(!i.pressed(Key::E) && i.down(Key::E));
+    }
+
+    #[test]
+    fn filtra_nasconde_i_tasti_non_consentiti() {
+        let mut i = Input::new();
+        i.set(Key::E, true);
+        i.set(Key::Left, true);
+        let f = i.filtra(|k| k != Key::E);
+        assert!(!f.pressed(Key::E) && !f.down(Key::E));
+        assert!(f.down(Key::Left));
+    }
+
+    #[test]
+    fn la_numerazione_dei_tasti_e_coerente() {
+        for (i, k) in TUTTI.iter().enumerate() {
+            assert_eq!(*k as usize, i);
+        }
     }
 
     #[test]

@@ -81,6 +81,15 @@
     background: color-mix(in srgb, var(--c, var(--fumo)) 22%, var(--notte-2));
     box-shadow: 0 0 18px color-mix(in srgb, var(--c, var(--fumo)) 45%, transparent);
   }
+  /* Un pulsante esiste solo quando la Sala lo ha presentato: fino ad allora
+     il suo posto resta vuoto (così gli altri non si spostano). */
+  button.tasto.bloccato { visibility: hidden; pointer-events: none; }
+  button.tasto.appena { animation: appare 1.2s ease-out; }
+  @keyframes appare {
+    0% { transform: scale(0.6); box-shadow: 0 0 0 color-mix(in srgb, var(--c, var(--fumo)) 0%, transparent); }
+    35% { transform: scale(1.08); box-shadow: 0 0 28px color-mix(in srgb, var(--c, var(--fumo)) 80%, transparent); }
+    100% { transform: scale(1); box-shadow: 0 0 0 transparent; }
+  }
   button.tasto:focus-visible { outline: 2px solid var(--controllo); outline-offset: 2px; }
   .muovi { --c: var(--fumo); font-size: 18px; }
   .salta { --c: var(--fumo); font-size: 10px; letter-spacing: 0.04em; }
@@ -139,6 +148,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     button.tasto.premuto { box-shadow: none; }
+    button.tasto.appena { animation: none; }
   }
 </style>
 
@@ -148,14 +158,14 @@
   </div>
 
   <div class="sx" id="sx">
-    <button class="tasto muovi" data-k="0" aria-label="Sinistra">◀</button>
-    <button class="tasto muovi" data-k="1" aria-label="Destra">▶</button>
+    <button class="tasto muovi" data-k="0" data-c="1" aria-label="Sinistra">◀</button>
+    <button class="tasto muovi" data-k="1" data-c="1" aria-label="Destra">▶</button>
   </div>
   <div class="dx" id="dx">
-    <button class="tasto voce" data-k="6">Q<small>VOCE</small></button>
-    <button class="tasto afferma" data-k="5">E<small>AFFERMA</small></button>
-    <button class="tasto lascia" data-k="7">R<small>LASCIA</small></button>
-    <button class="tasto salta" data-k="4">SALTA</button>
+    <button class="tasto voce" data-k="6" data-c="8">Q<small>VOCE</small></button>
+    <button class="tasto afferma" data-k="5" data-c="4">E<small>NOME</small></button>
+    <button class="tasto lascia" data-k="7" data-c="16">R<small>LASCIA</small></button>
+    <button class="tasto salta" data-k="4" data-c="2">SALTA</button>
   </div>
 
   <div class="barra">
@@ -232,7 +242,27 @@
     addEventListener("blur", () => { for (let k = 0; k < 10; k++) premi(k, false); });
 
     // Pulsanti touch: pointer events, quindi multi-touch (corri e salta insieme).
-    for (const b of document.querySelectorAll("button.tasto")) {
+    const pulsanti = [...document.querySelectorAll("button.tasto")];
+    let mostrati = -1;
+    // Mostra solo i pulsanti dei comandi che il gioco ha già sbloccato.
+    function aggiornaPulsanti() {
+      const c = ex.egresso_comandi();
+      if (c === mostrati) return;
+      for (const b of pulsanti) {
+        const ok = (c & Number(b.dataset.c)) !== 0;
+        const prima = !b.classList.contains("bloccato");
+        b.classList.toggle("bloccato", !ok);
+        if (ok && !prima && mostrati !== -1) {
+          b.classList.remove("appena");
+          void b.offsetWidth;
+          b.classList.add("appena");
+        }
+      }
+      mostrati = c;
+    }
+    for (const b of pulsanti) b.classList.add("bloccato");
+
+    for (const b of pulsanti) {
       const k = Number(b.dataset.k);
       const giu = (e) => {
         e.preventDefault();
@@ -257,6 +287,7 @@
       const dt = Math.min(ora - ultimo, 250);
       ultimo = ora;
       ex.egresso_frame(dt);
+      aggiornaPulsanti();
       const pixel = new Uint8ClampedArray(ex.memory.buffer, ex.egresso_pixels(), W * H * 4);
       ctx.putImageData(new ImageData(pixel, W, H), 0, 0);
       requestAnimationFrame(frame);

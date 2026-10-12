@@ -18,6 +18,7 @@ Un platformer di esplorazione e puzzle, ironico e un po' assurdo. Il protagonist
   - due finali per la stessa porta: nominarla ti riporta all'Atrio, lasciarla andare ti fa uscire.
 
 ## Comandi
+Non sono tutti disponibili subito: **la Sala, la voce del dungeon, li presenta uno alla volta** mentre giochi (sul telefono, i pulsanti compaiono quando lei ne parla).
 
 | Tasto | Azione |
 |---|---|

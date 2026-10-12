@@ -26,6 +26,11 @@ pub trait Game {
     fn quit(&self) -> bool {
         false
     }
+    /// Quali comandi mostrare all'interfaccia (es. pulsanti touch): una
+    /// maschera di bit decisa dal gioco. Di default tutti.
+    fn comandi(&self) -> u32 {
+        u32::MAX
+    }
     /// Una riga di stato per `--trace` in headless (es. posizione del giocatore).
     fn traccia(&self) -> String {
         String::new()

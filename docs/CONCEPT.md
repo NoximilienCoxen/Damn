@@ -77,6 +77,22 @@ Il primo test vero (da telefono) ha mostrato che la regola non si capiva: "cammi
 - **Cosa regge si vede:** ciò che è nominato ha un bordo luminoso sopra, il segno che ci si può stare.
 - **I suggerimenti compaiono sopra il personaggio**, solo per ciò che ha davanti ("E DILLO", "Q ALTRA VOCE", "R LASCIA"), e spariscono dopo due usi. Nell'Atrio si insegna solo E; R arriva nell'Abisso.
 
+## 3c. Onboarding guidato dalla Sala
+Il secondo test ha mostrato che tutti i comandi visibili dall'inizio confondono, e che "E DILLO" e i biglietti per terra non si capivano. Ora **la Sala introduce un'azione alla volta**, e il comando (anche il pulsante sul telefono) compare solo quando lei ne parla:
+
+| Momento | La Sala dice | Si sblocca |
+|---|---|---|
+| Inizio, nell'Atrio | BENTORNATO. · NON TI RICORDI DI ME? NON IMPORTA. · CAMMINA. | ◀ ▶ cammina |
+| Ti avvicini al vuoto | DAVANTI A TE NON C'È NIENTE. NON ANCORA. · DAGLI UN NOME, E SARÀ QUELLO. | E dai un nome |
+| Cadi prima di aver deciso | CADERE È UN MODO DI CONOSCERMI. · DAGLI UN NOME, PRIMA. | E |
+| Entri nell'Abisso | QUI LE PAROLE INVECCHIANO. · E C'È DA SALTARE. | salta |
+| Tre voci davanti all'abisso | DENTRO DI TE, OGNUNO LO CHIAMA A MODO SUO. · ASCOLTALI TUTTI. POI SCEGLI. | Q un'altra voce |
+| Un nome marcisce, o cadi nell'Abisso | TUTTO CIÒ CHE DICI, INVECCHIA. · PUOI ANCHE NON DIRE NIENTE. · LASCIA ANDARE, E GUARDA. | R lascia andare |
+
+- I suggerimenti mostrano un **tasto disegnato** e un verbo con dentro la parola: `[E] CHIAMALO PONTE`, `[Q] UN'ALTRA VOCE`, `[R] LASCIA ANDARE`.
+- Quando un comando si sblocca, in basso compare per qualche secondo "NUOVO" con il tasto e cosa fa.
+- I biglietti per terra sono stati tolti: quello che dicevano lo dice la Sala.
+
 ## 4. L'arco visivo è il messaggio
 Il messaggio non viene mai spiegato: lo raccontano i verbi e l'immagine.
 

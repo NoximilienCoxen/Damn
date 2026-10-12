@@ -103,6 +103,18 @@ Una quarta voce al centro dello schermo. Tecnicamente è una piccola **coda di b
 
 Il gioco la fa parlare con una riga sola (`self.sala.di(Battuta::PrimoNome)`) nei punti giusti, compreso un contatore di secondi "fermo" per la battuta che premia chi non fa niente.
 
+## Secondo test: i comandi
+Cosa non funzionava: tutti i pulsanti erano visibili dall'inizio senza spiegazione, "E DILLO" non diceva *cosa* si dice, i biglietti per terra non si capivano, e davanti al vuoto niente faceva capire che bisognava *decidere cosa c'è*.
+
+Come è cambiato:
+- **La Sala parla a copioni** (`sala.rs`): sequenze di frasi legate a un momento. Un copione può **sbloccare un comando** quando la sua ultima frase è stata scritta. Quelli che insegnano non scadono mai; i commenti sì.
+- **Comandi bloccati**: `Egresso::sbloccati` è una maschera di bit. A ogni passo il gioco riceve una copia filtrata dell'input (`Input::filtra`, senza allocazioni), in cui i tasti non ancora sbloccati risultano sempre su.
+- **Sul telefono** il trait `Game` espone `comandi()`, il guscio web la esporta (`egresso_comandi`) e la pagina mostra un pulsante solo quando il suo bit è acceso, con un lampo d'ingresso. Il posto resta riservato (`visibility: hidden`), così gli altri pulsanti non si spostano.
+- **Suggerimenti con la parola dentro**: `[E] CHIAMALO PONTE` cambia con la voce in primo piano (`[E] CHIAMALO BURRONE`).
+- **I biglietti diventano copioni**: ogni percezione può avere un copione che la Sala dice la prima volta che la percepisci.
+
+I test di gioco ora controllano anche il percorso didattico: all'inizio non ci si muove, la Sala sblocca il cammino, davanti al vuoto sblocca E, l'Abisso sblocca il salto e Q, e lasciar andare arriva per ultimo.
+
 ## Cosa manca (prossimi passi)
 - Luce con ombre proiettate dalle lettere sulle lettere.
 - Lettere come corpi rigidi: che rotolino e si ammucchino davvero.

@@ -7,6 +7,7 @@
 //!   propongono nomi. Solo ciò che è nominato regge.
 
 use super::lessico::{self, Lemma, Voce};
+use super::sala::Battuta;
 
 pub const COLONNE: i32 = 40;
 pub const RIGHE: i32 = 22;
@@ -40,6 +41,8 @@ pub struct DefPercetto {
     pub proposte: &'static [DefProposta],
     /// Già nominato all'inizio (indice della proposta).
     pub iniziale: Option<usize>,
+    /// Cosa dice la Sala la prima volta che lo percepisci.
+    pub copione: Option<Battuta>,
 }
 
 const fn p(voce: Voce, lemma: &'static Lemma, x: i32, y: i32, verticale: bool, celle: i32) -> DefProposta {
@@ -48,7 +51,7 @@ const fn p(voce: Voce, lemma: &'static Lemma, x: i32, y: i32, verticale: bool, c
 
 use Voce::*;
 
-/// Una stanza: la sua realtà, le sue percezioni, i suoi biglietti.
+/// Una stanza: la sua realtà e le sue percezioni.
 pub struct Stanza {
     pub nome: &'static str,
     /// La realtà, una riga per fila di tile.
@@ -57,8 +60,6 @@ pub struct Stanza {
     /// Lanterne della realtà (in tile): illuminano ciò che viene rivelato.
     pub lanterne: &'static [(i32, i32)],
     pub percetti: &'static [DefPercetto],
-    /// I biglietti che il protagonista si è lasciato: (colonna, righe di testo).
-    pub biglietti: &'static [(i32, &'static [&'static str])],
     /// Dove nasce il protagonista (in pixel, angolo in alto a sinistra).
     pub partenza: (f32, f32),
     /// Camminando oltre il bordo destro si passa alla stanza successiva.
@@ -102,12 +103,14 @@ pub static ATRIO: Stanza = Stanza {
             attributi: &["FREDDO", "RUVIDO"],
             proposte: &[p(Controllo, &lessico::MURO, 0, 4, true, 13)],
             iniziale: Some(0),
+            copione: None,
         },
         DefPercetto {
             area: (1, 17, 12, 17),
             attributi: &["DURO"],
             proposte: &[p(Controllo, &lessico::PAVIMENTO, 1, 17, false, 12)],
             iniziale: Some(0),
+            copione: None,
         },
         // Il primo vuoto: una voce sola, una parola sola.
         DefPercetto {
@@ -115,17 +118,15 @@ pub static ATRIO: Stanza = Stanza {
             attributi: &["VUOTO"],
             proposte: &[p(Controllo, &lessico::PONTE_SALDO, 13, 17, false, 10)],
             iniziale: None,
+            copione: Some(Battuta::Vuoto),
         },
         DefPercetto {
             area: (23, 17, 39, 17),
             attributi: &["DURO"],
             proposte: &[p(Controllo, &lessico::PAVIMENTO, 23, 17, false, 17)],
             iniziale: Some(0),
+            copione: None,
         },
-    ],
-    biglietti: &[
-        (9, &["NOTA PER ME:", "QUELLO CHE NON NOMINO, NON C'È."]),
-        (29, &["NOTA PER ME:", "DI LÀ C'È UN ABISSO VERO.", "O QUASI."]),
     ],
     partenza: PARTENZA,
     uscita_destra: true,
@@ -166,12 +167,14 @@ pub static ABISSO: Stanza = Stanza {
             attributi: &["FREDDO", "RUVIDO"],
             proposte: &[p(Controllo, &lessico::MURO, 0, 4, true, 13)],
             iniziale: Some(0),
+            copione: None,
         },
         DefPercetto {
             area: (1, 17, 14, 17),
             attributi: &["DURO"],
             proposte: &[p(Controllo, &lessico::PAVIMENTO, 1, 17, false, 14)],
             iniziale: Some(0),
+            copione: None,
         },
         // L'abisso: il cuore del puzzle. In realtà è un gradino.
         DefPercetto {
@@ -183,12 +186,14 @@ pub static ABISSO: Stanza = Stanza {
                 p(Memoria, &lessico::FRIGO, 19, 16, true, 5),
             ],
             iniziale: None,
+            copione: Some(Battuta::TreVoci),
         },
         DefPercetto {
             area: (25, 17, 38, 17),
             attributi: &["DURO"],
             proposte: &[p(Controllo, &lessico::PAVIMENTO, 25, 17, false, 14)],
             iniziale: Some(0),
+            copione: None,
         },
         // L'uscita. Nominarla come PORTA riporta all'Atrio.
         DefPercetto {
@@ -200,12 +205,8 @@ pub static ABISSO: Stanza = Stanza {
                 p(Memoria, &lessico::ARMADIO, 36, 10, true, 7),
             ],
             iniziale: None,
+            copione: Some(Battuta::Porta),
         },
-    ],
-    biglietti: &[
-        (5, &["NOTA PER ME:", "QUELLO CHE NOMINO, REGGE.", "MA NON PER SEMPRE."]),
-        (13, &["NOTA PER ME:", "NON FIDARTI DELLA PAPERELLA."]),
-        (31, &["NOTA PER ME:", "OGNI PORTA CHE HO NOMINATO", "MI HA RIPORTATO QUI."]),
     ],
     partenza: PARTENZA,
     uscita_destra: false,
@@ -235,17 +236,6 @@ mod tests {
                         let (x, y) = pr.cella(i);
                         assert!((0..COLONNE).contains(&x) && (0..RIGHE).contains(&y), "{}", st.nome);
                     }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn i_biglietti_entrano_nello_schermo() {
-        for st in STANZE {
-            for (_, righe) in st.biglietti {
-                for r in *righe {
-                    assert!(crate::engine::font::misura(r) <= 316, "biglietto troppo lungo: {r}");
                 }
             }
         }

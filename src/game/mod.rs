@@ -25,7 +25,7 @@ use lessico::{Natura, Voce};
 use livello::{COLONNE, STANZE, TILE};
 use mondo::{distanza_rect, Evento, Fase, Mondo, Reale};
 use particelle::{Particella, Particelle};
-use sala::{Battuta, Sala};
+use sala::{comando, Battuta, Sala};
 
 /// Distanza massima (px) per mettere a fuoco una percezione.
 const DIST_FOCUS: f32 = 30.0;
@@ -52,7 +52,6 @@ pub struct Egresso {
     pub scena: Scena,
     pub focus: Option<usize>,
     pub messaggio: Option<Messaggio>,
-    pub biglietto: Option<usize>,
     pub debug: bool,
     pub t: f32,
     /// Indice in `STANZE` della stanza attuale.
@@ -69,6 +68,10 @@ pub struct Egresso {
     pub sala: Sala,
     /// Secondi senza toccare niente.
     pub fermo: f32,
+    /// Comandi già sbloccati dalla Sala (maschera di `sala::comando`).
+    pub sbloccati: u8,
+    /// L'ultimo comando sbloccato e da quanti secondi (per l'avviso "NUOVO").
+    pub nuovo: Option<(u8, f32)>,
     rng: Rng,
     font: Font,
     luce: Framebuffer,
@@ -92,7 +95,6 @@ impl Egresso {
             scena: Scena::Gioco,
             focus: None,
             messaggio: None,
-            biglietto: None,
             debug: false,
             t: 0.0,
             stanza: 0,
@@ -103,6 +105,8 @@ impl Egresso {
             lampo: None,
             sala: Sala::new(),
             fermo: 0.0,
+            sbloccati: 0,
+            nuovo: None,
             rng,
             font: Font::new(),
             luce: Framebuffer::new(LARGHEZZA, ALTEZZA),
@@ -142,12 +146,15 @@ impl Egresso {
         let su_proposta = self.mondo.percetti.iter().any(|p| p.fase == Fase::Proposto && p.rect().x <= x && x <= p.rect().right());
         self.cadute += 1;
         if self.cadute == 1 {
-            self.dici(Voce::Controllo, "QUELLO CHE NON DICO, NON C'È.");
             self.sala.di(Battuta::PrimaCaduta);
         } else if su_proposta {
             self.dici(Voce::Controllo, "NON L'AVEVO DETTO.");
         } else {
             self.dici(Voce::Paura, "VISTO? BURRONE.");
+        }
+        if self.stanza == 1 {
+            // Nell'Abisso, cadere è il momento di imparare a lasciar andare.
+            self.sala.di(Battuta::Invecchia);
         }
         self.giocatore.riparti();
     }
@@ -261,7 +268,7 @@ impl Egresso {
                     if std::ptr::eq(pr.lemma, &lessico::BURRONE) && natura == Natura::Scivolosa {
                         self.sala.di(Battuta::Burro);
                     } else if natura == Natura::Vuota {
-                        self.sala.di(Battuta::NomeMarcito);
+                        self.sala.di(Battuta::Invecchia);
                     }
                 }
             }
@@ -337,6 +344,19 @@ impl Egresso {
     }
 }
 
+/// Un tasto è attivo solo se la Sala ha già sbloccato il suo comando.
+fn consentito(sbloccati: u8, k: Key) -> bool {
+    let serve = match k {
+        Key::Left | Key::Right | Key::A | Key::D => comando::MUOVI,
+        Key::Space | Key::W | Key::Up => comando::SALTA,
+        Key::E => comando::DI,
+        Key::Q => comando::VOCE,
+        Key::R => comando::LASCIA,
+        _ => return true,
+    };
+    sbloccati & serve != 0
+}
+
 impl Default for Egresso {
     fn default() -> Self {
         Self::new()
@@ -355,7 +375,14 @@ impl Game for Egresso {
                 self.messaggio = None;
             }
         }
-        self.sala.update(DT);
+        let nuovi = self.sala.update(DT) & !self.sbloccati;
+        if nuovi != 0 {
+            self.sbloccati |= nuovi;
+            self.nuovo = Some((nuovi, 0.0));
+        }
+        if let Some((c, t)) = self.nuovo {
+            self.nuovo = if t < 4.0 { Some((c, t + DT)) } else { None };
+        }
 
         match self.scena {
             Scena::Atrio(t) => {
@@ -375,8 +402,13 @@ impl Game for Egresso {
             Scena::Gioco => {}
         }
 
+        // I tasti non ancora sbloccati dalla Sala non fanno niente.
+        let sb = self.sbloccati;
+        let filtrato = input.filtra(|k| consentito(sb, k));
+        let input = &filtrato;
+
         self.t_stanza += DT;
-        if self.t > 3.2 && self.stanza == 0 {
+        if self.t > 2.2 && self.stanza == 0 {
             self.sala.di(Battuta::Benvenuto);
         }
         // Chi non fa niente, a volte, fa la cosa giusta.
@@ -426,20 +458,30 @@ impl Game for Egresso {
         }
 
         self.mondo.update(DT, self.giocatore.rect());
+        // La prima volta che percepisci qualcosa, la Sala può avere da dire.
+        for k in 0..self.mondo.percetti.len() {
+            let p = &self.mondo.percetti[k];
+            if let (Some(b), false) = (p.def.copione, matches!(p.fase, Fase::Ignoto)) {
+                self.sala.di(b);
+            }
+        }
         self.gestisci_eventi();
         self.bordo_rivelazioni();
         self.contatti();
 
-        let cx = self.giocatore.rect().center().x;
-        self.biglietto = self.mondo.stanza.biglietti.iter().position(|(col, _)| (cx - (*col * TILE + 4) as f32).abs() < 14.0);
         self.particelle.update(DT, &self.mondo);
+    }
+
+    fn comandi(&self) -> u32 {
+        self.sbloccati as u32
     }
 
     fn traccia(&self) -> String {
         let g = &self.giocatore;
         let fasi: Vec<String> = self.mondo.percetti.iter().map(|p| format!("{:?}", p.fase).chars().take(4).collect()).collect();
         format!(
-            "stanza {} pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
+            "sb {:05b} stanza {} pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
+            self.sbloccati,
             self.stanza,
             g.pos.x,
             g.pos.y,
@@ -480,9 +522,31 @@ mod tests {
         }
     }
 
+    /// Gioca finché `fatto` diventa vero (al massimo `max` passi).
+    fn fino_a(g: &mut Egresso, max: usize, giu: &[Key], fatto: impl Fn(&Egresso) -> bool) -> bool {
+        for _ in 0..max {
+            if fatto(g) {
+                return true;
+            }
+            gioca(g, 1, giu, None);
+        }
+        fatto(g)
+    }
+
+    #[test]
+    fn all_inizio_i_comandi_sono_bloccati() {
+        let mut g = Egresso::new();
+        gioca(&mut g, 30, &[Key::Right], Some(Key::E));
+        assert_eq!(g.sbloccati, 0);
+        assert_eq!(g.giocatore.pos.x, STANZE[0].partenza.0, "non si muove finché la Sala non dice CAMMINA");
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0), "la Sala sblocca il cammino");
+        assert_eq!(g.sbloccati & comando::DI, 0, "dare un nome arriva dopo");
+    }
+
     #[test]
     fn nell_atrio_si_cade_nel_vuoto_non_detto() {
         let mut g = Egresso::new();
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0));
         gioca(&mut g, 400, &[Key::Right], None);
         assert_eq!(g.stanza, 0, "senza dire PONTE non si passa");
         assert!(g.cadute >= 1);
@@ -491,27 +555,32 @@ mod tests {
     #[test]
     fn dicendo_ponte_si_arriva_all_abisso() {
         let mut g = Egresso::new();
-        // Fino al bordo del vuoto, poi aspetta le proposte.
-        while g.giocatore.pos.x < 92.0 {
-            gioca(&mut g, 1, &[Key::Right], None);
-        }
-        gioca(&mut g, 90, &[], None);
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0));
+        assert!(fino_a(&mut g, 300, &[Key::Right], |g| g.giocatore.pos.x >= 92.0));
+        // La Sala spiega il vuoto e sblocca E.
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::DI != 0), "la Sala sblocca il dare un nome");
         assert_eq!(g.mondo.percetti[2].fase, Fase::Proposto);
         gioca(&mut g, 1, &[], Some(Key::E));
         assert_eq!(g.mondo.percetti[2].fase, Fase::Affermato);
-        for _ in 0..400 {
-            if g.stanza == 1 {
-                break;
-            }
-            gioca(&mut g, 1, &[Key::Right], None);
-        }
-        assert_eq!(g.stanza, 1, "oltre il bordo destro c'è l'Abisso");
+        assert!(fino_a(&mut g, 400, &[Key::Right], |g| g.stanza == 1), "oltre il bordo destro c'è l'Abisso");
         assert_eq!(g.cadute, 0, "il PONTE detto regge");
+    }
+
+    #[test]
+    fn l_abisso_insegna_a_saltare_e_ad_ascoltare_le_voci() {
+        let mut g = Egresso::new();
+        g.sbloccati = comando::MUOVI | comando::DI;
+        g.vai_stanza(1);
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::SALTA != 0));
+        assert!(fino_a(&mut g, 300, &[Key::Right], |g| g.giocatore.pos.x >= 100.0));
+        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::VOCE != 0), "tre voci: si sblocca Q");
+        assert_eq!(g.sbloccati & comando::LASCIA, 0, "lasciar andare arriva per ultimo");
     }
 
     #[test]
     fn la_porta_nominata_riporta_all_atrio() {
         let mut g = Egresso::new();
+        g.sbloccati = comando::TUTTI;
         g.vai_stanza(1);
         g.giocatore.pos.x = 280.0;
         gioca(&mut g, 90, &[], None);
@@ -522,5 +591,6 @@ mod tests {
         gioca(&mut g, 200, &[], None);
         assert_eq!(g.stanza, 0);
         assert_eq!(g.scena, Scena::Gioco);
+        assert_eq!(g.sbloccati, comando::TUTTI, "i comandi imparati restano");
     }
 }
