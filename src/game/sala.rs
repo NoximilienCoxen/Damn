@@ -1,30 +1,13 @@
-//! La Sala: la voce del dungeon, e la guida del giocatore.
+//! La Sala: la voce del dungeon.
 //!
-//! Le tre voci interiori (Controllo, Paura, Memoria) danno nomi alle cose.
-//! La Sala no: non nomina mai niente, al massimo ripete i nomi che dai tu.
-//! Parla a **copioni**: poche frasi di fila legate a un momento del gioco.
-//! Alcuni copioni, finendo, **sbloccano un comando**: è così che il
-//! giocatore impara cosa può fare, un'azione alla volta.
-
-/// I comandi che la Sala può sbloccare (maschera di bit).
-pub mod comando {
-    pub const MUOVI: u8 = 1;
-    pub const SALTA: u8 = 2;
-    /// E: dare un nome.
-    pub const DI: u8 = 4;
-    /// Q: ascoltare un'altra voce.
-    pub const VOCE: u8 = 8;
-    /// R: lasciare andare.
-    pub const LASCIA: u8 = 16;
-    pub const TUTTI: u8 = MUOVI | SALTA | DI | VOCE | LASCIA;
-}
+//! La Sala ti vuole bene e non vuole che te ne vada. Non spiega le regole:
+//! **incoraggia lo sforzo** (è questo che la rende ironica) e si fa
+//! inquieta quando smetti di forzare. Parla a **copioni**: poche frasi di
+//! fila legate a un momento del gioco, ognuno detto una volta sola.
 
 pub struct Copione {
     pub frasi: &'static [&'static str],
-    /// Comandi sbloccati quando l'ultima frase è stata scritta.
-    pub sblocca: u8,
-    /// Un commento può scadere (non arriva fuori contesto); un copione che
-    /// insegna qualcosa no.
+    /// Un commento può scadere (non arriva fuori contesto); l'accoglienza no.
     pub scade: bool,
 }
 
@@ -32,69 +15,47 @@ pub struct Copione {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Battuta {
     Benvenuto,
-    Vuoto,
-    PrimaCaduta,
-    PrimoNome,
-    Abisso,
-    TreVoci,
-    Invecchia,
-    PrimoLasciare,
-    Porta,
-    Burro,
-    RitornoAllAtrio,
-    Fermo,
+    Cresce,
+    Muro,
+    Atrio,
+    Rallenti,
+    Galleria,
+    Affonda,
+    Vento,
+    Ritorno,
+    Arco,
 }
 
-const N: usize = Battuta::Fermo as usize + 1;
-
-use comando::*;
+const N: usize = Battuta::Arco as usize + 1;
 
 impl Battuta {
     pub const TUTTE: [Battuta; N] = [
         Battuta::Benvenuto,
-        Battuta::Vuoto,
-        Battuta::PrimaCaduta,
-        Battuta::PrimoNome,
-        Battuta::Abisso,
-        Battuta::TreVoci,
-        Battuta::Invecchia,
-        Battuta::PrimoLasciare,
-        Battuta::Porta,
-        Battuta::Burro,
-        Battuta::RitornoAllAtrio,
-        Battuta::Fermo,
+        Battuta::Cresce,
+        Battuta::Muro,
+        Battuta::Atrio,
+        Battuta::Rallenti,
+        Battuta::Galleria,
+        Battuta::Affonda,
+        Battuta::Vento,
+        Battuta::Ritorno,
+        Battuta::Arco,
     ];
 
     pub fn copione(self) -> &'static Copione {
         match self {
             Battuta::Benvenuto => {
-                &Copione { frasi: &["BENTORNATO.", "NON TI RICORDI DI ME? NON IMPORTA.", "CAMMINA."], sblocca: MUOVI, scade: false }
+                &Copione { frasi: &["BENTORNATO.", "HAI NUOTATO TANTO, PER ARRIVARE QUI.", "LA SALA È DI LÀ."], scade: false }
             }
-            Battuta::Vuoto => &Copione {
-                frasi: &["DAVANTI A TE NON C'È NIENTE. NON ANCORA.", "DAGLI UN NOME, E SARÀ QUELLO."],
-                sblocca: DI,
-                scade: false,
-            },
-            Battuta::PrimaCaduta => {
-                &Copione { frasi: &["CADERE È UN MODO DI CONOSCERMI.", "DAGLI UN NOME, PRIMA."], sblocca: DI, scade: false }
-            }
-            Battuta::PrimoNome => &Copione { frasi: &["LO CHIAMI PONTE. VA BENE.", "ORA ESISTE. PER TE."], sblocca: 0, scade: true },
-            Battuta::Abisso => &Copione { frasi: &["QUI LE PAROLE INVECCHIANO.", "E C'È DA SALTARE."], sblocca: SALTA, scade: false },
-            Battuta::TreVoci => &Copione {
-                frasi: &["DENTRO DI TE, OGNUNO LO CHIAMA A MODO SUO.", "ASCOLTALI TUTTI. POI SCEGLI."],
-                sblocca: VOCE,
-                scade: false,
-            },
-            Battuta::Invecchia => &Copione {
-                frasi: &["TUTTO CIÒ CHE DICI, INVECCHIA.", "PUOI ANCHE NON DIRE NIENTE.", "LASCIA ANDARE, E GUARDA."],
-                sblocca: LASCIA,
-                scade: false,
-            },
-            Battuta::PrimoLasciare => &Copione { frasi: &["ECCO. ADESSO MI VEDI."], sblocca: 0, scade: true },
-            Battuta::Porta => &Copione { frasi: &["OGNI PORTA CHE HAI NOMINATO", "TI HA RIPORTATO QUI."], sblocca: 0, scade: true },
-            Battuta::Burro => &Copione { frasi: &["NON GUARDARE ME."], sblocca: 0, scade: true },
-            Battuta::RitornoAllAtrio => &Copione { frasi: &["OGNI PORTA CHE NOMINI È MIA."], sblocca: 0, scade: true },
-            Battuta::Fermo => &Copione { frasi: &["COSÌ. BRAVO."], sblocca: 0, scade: true },
+            Battuta::Cresce => &Copione { frasi: &["COSÌ. SPINGI.", "C'È SEMPRE PIÙ SALA DA VEDERE."], scade: true },
+            Battuta::Muro => &Copione { frasi: &["PIÙ FORTE."], scade: true },
+            Battuta::Atrio => &Copione { frasi: &["LA PORTA È IN FONDO. SBRIGATI."], scade: true },
+            Battuta::Rallenti => &Copione { frasi: &["...PERCHÉ RALLENTI?"], scade: true },
+            Battuta::Galleria => &Copione { frasi: &["CHE BELLA GALLERIA, EH?"], scade: true },
+            Battuta::Affonda => &Copione { frasi: &["NUOTA! NON STARE LÌ!"], scade: true },
+            Battuta::Vento => &Copione { frasi: &["NON COSÌ. SALTA, SALTA!"], scade: true },
+            Battuta::Ritorno => &Copione { frasi: &["DOVE VAI? LA SALA È DI QUA."], scade: true },
+            Battuta::Arco => &Copione { frasi: &["NO.", "ASPETTA."], scade: false },
         }
     }
 }
@@ -113,7 +74,6 @@ pub struct Corrente {
     pub battuta: Battuta,
     pub frase: usize,
     pub t: f32,
-    sbloccato: bool,
 }
 
 pub struct Sala {
@@ -162,19 +122,14 @@ impl Sala {
         }
     }
 
-    /// Avanza il tempo. Restituisce i comandi appena sbloccati (0 se nessuno).
-    pub fn update(&mut self, dt: f32) -> u8 {
-        let mut sbloccati = 0;
+    /// Avanza il tempo.
+    pub fn update(&mut self, dt: f32) {
         let qualcuno_aspetta = self.coda[0].is_some();
         if let Some(mut c) = self.attuale {
             let copione = c.battuta.copione();
             let testo = copione.frasi[c.frase];
             c.t += dt;
             let ultima = c.frase + 1 == copione.frasi.len();
-            if ultima && !c.sbloccato && c.t >= scrittura(testo) {
-                c.sbloccato = true;
-                sbloccati |= copione.sblocca;
-            }
             // Un commento lascia spazio a chi aspetta.
             if copione.scade && qualcuno_aspetta && c.t > scrittura(testo) + PAUSA_BREVE {
                 c.t = c.t.max(durata(testo) - DISSOLVENZA);
@@ -197,10 +152,9 @@ impl Sala {
                 // Fuori tempo: non lo dice, e potrà dirlo la prossima volta che serve.
                 self.dette[b as usize] = false;
             } else {
-                self.attuale = Some(Corrente { battuta: b, frase: 0, t: 0.0, sbloccato: false });
+                self.attuale = Some(Corrente { battuta: b, frase: 0, t: 0.0 });
             }
         }
-        sbloccati
     }
 
     /// La frase che si vede: testo, caratteri già scritti, opacità (0..1).
@@ -217,24 +171,20 @@ impl Sala {
 mod tests {
     use super::*;
 
-    fn avanza(s: &mut Sala, secondi: f32) -> u8 {
-        let mut sb = 0;
+    fn avanza(s: &mut Sala, secondi: f32) {
         for _ in 0..(secondi * 60.0) as usize {
-            sb |= s.update(1.0 / 60.0);
+            s.update(1.0 / 60.0);
         }
-        sb
     }
 
     #[test]
-    fn un_copione_dice_le_frasi_in_ordine_e_poi_sblocca() {
+    fn un_copione_dice_le_frasi_in_ordine() {
         let mut s = Sala::new();
         s.di(Battuta::Benvenuto);
         s.update(0.0);
-        assert_eq!(s.visibile().unwrap().0, "BENTORNATO.");
-        let mut viste = vec!["BENTORNATO."];
-        let mut sb = 0;
+        let mut viste = vec![s.visibile().unwrap().0];
         for _ in 0..1200 {
-            sb |= s.update(1.0 / 60.0);
+            s.update(1.0 / 60.0);
             if let Some((t, _, _)) = s.visibile() {
                 if *viste.last().unwrap() != t {
                     viste.push(t);
@@ -242,17 +192,16 @@ mod tests {
             }
         }
         assert_eq!(viste, Battuta::Benvenuto.copione().frasi);
-        assert_eq!(sb, comando::MUOVI);
         assert!(!s.occupata());
     }
 
     #[test]
     fn ogni_copione_una_volta_sola() {
         let mut s = Sala::new();
-        s.di(Battuta::Burro);
-        s.di(Battuta::Burro);
+        s.di(Battuta::Muro);
+        s.di(Battuta::Muro);
         avanza(&mut s, 10.0);
-        s.di(Battuta::Burro);
+        s.di(Battuta::Muro);
         s.update(0.0);
         assert!(s.attuale.is_none());
     }
@@ -260,24 +209,14 @@ mod tests {
     #[test]
     fn un_commento_fuori_tempo_si_perde_ma_puo_tornare() {
         let mut s = Sala::new();
-        s.di(Battuta::Benvenuto); // insegna: lungo e non scade
+        s.di(Battuta::Benvenuto); // lungo e non scade
         s.update(0.0);
-        s.di(Battuta::PrimoNome); // commento: aspetta troppo
+        s.di(Battuta::Muro); // commento: aspetta troppo
         avanza(&mut s, 12.0);
-        assert!(!s.detta(Battuta::PrimoNome));
-        s.di(Battuta::PrimoNome);
+        assert!(!s.detta(Battuta::Muro));
+        s.di(Battuta::Muro);
         s.update(0.0);
-        assert_eq!(s.attuale.map(|c| c.battuta), Some(Battuta::PrimoNome));
-    }
-
-    #[test]
-    fn un_copione_che_insegna_non_scade() {
-        let mut s = Sala::new();
-        s.di(Battuta::Benvenuto);
-        s.update(0.0);
-        s.di(Battuta::Vuoto);
-        let sb = avanza(&mut s, 20.0);
-        assert_eq!(sb, comando::MUOVI | comando::DI);
+        assert_eq!(s.attuale.map(|c| c.battuta), Some(Battuta::Muro));
     }
 
     #[test]

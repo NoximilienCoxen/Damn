@@ -1,11 +1,10 @@
-//! Particelle: punti di luce e lettere che cadono.
+//! Particelle: punti di luce, polvere, bolle.
 //!
 //! Un unico `Vec` preallocato con capacità fissa: le particelle morte si
 //! tolgono con `swap_remove` (O(1), l'ordine non conta) e se il pool è pieno
 //! le nuove vengono semplicemente ignorate. Nessuna allocazione nel loop.
+//! Le posizioni sono in pixel del mondo (non dello schermo).
 
-use super::livello::TILE;
-use super::mondo::Mondo;
 use crate::engine::math::Vec2;
 
 pub const MAX: usize = 3000;
@@ -17,10 +16,7 @@ pub struct Particella {
     pub vita: f32,
     pub durata: f32,
     pub colore: u32,
-    /// `' '` = un punto di luce; altrimenti una lettera che cade.
-    pub lettera: char,
     pub gravita: f32,
-    pub inclina: bool,
 }
 
 pub struct Particelle {
@@ -42,27 +38,26 @@ impl Particelle {
         self.v.clear();
     }
 
-    pub fn update(&mut self, dt: f32, mondo: &Mondo) {
+    /// Sposta di `dx` tutte le particelle oltre `da_x` (quando la stanza si allunga).
+    pub fn sposta_oltre(&mut self, da_x: f32, dx: f32) {
+        for p in &mut self.v {
+            if p.pos.x >= da_x {
+                p.pos.x += dx;
+            }
+        }
+    }
+
+    pub fn update(&mut self, dt: f32) {
         let mut i = 0;
         while i < self.v.len() {
             let p = &mut self.v[i];
             p.vita -= dt;
-            if p.vita <= 0.0 || p.pos.y > 200.0 {
+            if p.vita <= 0.0 {
                 self.v.swap_remove(i);
                 continue;
             }
             p.vel.y += p.gravita * dt;
             p.pos += p.vel * dt;
-            // Le lettere che cadono si posano su ciò che regge.
-            if p.lettera != ' ' && p.vel.y > 0.0 {
-                let tx = ((p.pos.x + 2.5) / TILE as f32).floor() as i32;
-                let ty = ((p.pos.y + 7.0) / TILE as f32).floor() as i32;
-                if mondo.solido(tx, ty).is_some() {
-                    p.pos.y = (ty * TILE) as f32 - 7.0;
-                    p.vel.y = 0.0;
-                    p.vel.x *= 0.7;
-                }
-            }
             i += 1;
         }
     }

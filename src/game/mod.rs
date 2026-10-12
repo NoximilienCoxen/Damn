@@ -1,360 +1,281 @@
-//! EGRESSO, il prototipo: l'Atrio (dove si impara a nominare) e l'Abisso
-//! (tre voci, un abisso che forse non lo è, una porta e due finali).
+//! EGRESSO, il prototipo della Sala che cresce: la Riva, l'Atrio e la
+//! Galleria delle Correnti (vedi `docs/CONCEPT.md`).
 //!
-//! Comandi: frecce/A-D muovi, Spazio/W salta, E afferma, Q cambia voce,
-//! R lascia andare, F3 debug.
+//! Le regole, tutte fisiche e prevedibili:
+//! - **più forzi, più la Sala si allunga** (spingere contro muri, venti e
+//!   correnti, saltare a ripetizione); attraversarla senza forzare la
+//!   riporta alla sua misura;
+//! - **dentro una corrente, chi si muove resta dov'è; chi si lascia andare
+//!   viene portato** (vedi `giocatore.rs`).
+//!
+//! Comandi: frecce/A-D muovi, Spazio/W salta, F3 debug.
 
 pub mod giocatore;
-pub mod lessico;
-pub mod livello;
 pub mod mondo;
 pub mod particelle;
 mod render;
 pub mod sala;
+pub mod stanze;
 
 use crate::engine::app::{Game, Stats, ALTEZZA, LARGHEZZA};
 use crate::engine::font::Font;
-use crate::engine::framebuffer::Framebuffer;
+use crate::engine::framebuffer::{rgb, Framebuffer};
 use crate::engine::glow::Glow;
 use crate::engine::input::{Input, Key};
-use crate::engine::math::{Rect, Rng, Vec2};
+use crate::engine::math::{Rng, Vec2};
 use crate::engine::time::DT;
 
-use giocatore::{Esito, Giocatore};
-use lessico::{Natura, Voce};
-use livello::{COLONNE, STANZE, TILE};
-use mondo::{distanza_rect, Evento, Fase, Mondo, Reale};
+use giocatore::{Esito, Giocatore, Moto};
+use mondo::Mondo;
 use particelle::{Particella, Particelle};
-use sala::{comando, Battuta, Sala};
+use sala::{Battuta, Sala};
+use stanze::{Fluido, ATRIO_I, GALLERIA_I, INDIZIO, RIVA_I, STANZE, TILE};
 
-/// Distanza massima (px) per mettere a fuoco una percezione.
-const DIST_FOCUS: f32 = 30.0;
+/// Moduli aggiunti al secondo mentre si forza.
+const CRESCITA: f32 = 1.3;
+/// Moduli tolti per ogni modulo percorso senza forzare.
+const RITIRO: f32 = 0.5;
+const MAX_MODULI: f32 = 30.0;
+/// Dove si entra da una porta (le porte sono tutte alla stessa altezza).
+const Y_PORTA: f32 = 96.0 - giocatore::ALT;
+/// Dove ti svegli: la colonna della Riva (mappa base).
+const COLONNA_INIZIO: i32 = 30;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Scena {
     Gioco,
-    /// Hai attraversato una PORTA nominata: si torna all'Atrio (secondi).
-    Atrio(f32),
-    /// Sei uscito davvero (secondi).
+    /// Sei uscito (secondi).
     Uscito(f32),
-}
-
-pub struct Messaggio {
-    pub testo: &'static str,
-    pub voce: Voce,
-    pub t: f32,
 }
 
 pub struct Egresso {
     pub mondo: Mondo,
     pub giocatore: Giocatore,
     pub particelle: Particelle,
-    pub scena: Scena,
-    pub focus: Option<usize>,
-    pub messaggio: Option<Messaggio>,
-    pub debug: bool,
-    pub t: f32,
-    /// Indice in `STANZE` della stanza attuale.
-    pub stanza: usize,
-    /// Secondi da quando si è entrati nella stanza (per il suo nome a schermo).
-    pub t_stanza: f32,
-    /// Quante volte sono stati usati E, Q, R (i suggerimenti si spengono).
-    pub usati: [u8; 3],
-    pub cadute: u32,
-    pub ritorni_all_atrio: u32,
-    /// Percezione appena affermata e secondi di lampo rimasti.
-    pub lampo: Option<(usize, f32)>,
-    /// La voce del dungeon.
     pub sala: Sala,
-    /// Secondi senza toccare niente.
-    pub fermo: f32,
-    /// Comandi già sbloccati dalla Sala (maschera di `sala::comando`).
-    pub sbloccati: u8,
-    /// L'ultimo comando sbloccato e da quanti secondi (per l'avviso "NUOVO").
-    pub nuovo: Option<(u8, f32)>,
+    pub scena: Scena,
+    pub stanza: usize,
+    /// Quanto è allungata ogni stanza (in moduli, con la parte frazionaria).
+    pub moduli: [f32; STANZE.len()],
+    /// Moduli creati in tutta la partita, forzando.
+    pub sforzo_totale: f32,
+    pub t: f32,
+    pub t_stanza: f32,
+    /// Telecamera: x del bordo sinistro dello schermo, in pixel del mondo.
+    pub cam: f32,
+    pub scossa: f32,
+    /// Quanto sta forzando adesso (0..1, smussato): la lanterna brucia più forte.
+    pub foga: f32,
+    /// Scritte lette, una maschera di bit per stanza.
+    pub lette: [u32; STANZE.len()],
+    lettura: Option<(usize, f32)>,
+    pub ha_capito: bool,
+    t_muro: f32,
+    pub debug: bool,
     rng: Rng,
     font: Font,
     luce: Framebuffer,
     glow: Glow,
-    realta: Vec<u32>,
-    realta_luce: Vec<u32>,
-    polvere: Vec<(i32, i32, u8)>,
+    /// La stanza dipinta una volta (si ridipinge quando cambia forma).
+    sfondo: Vec<u32>,
+    sfondo_luce: Vec<u32>,
 }
 
 impl Egresso {
     pub fn new() -> Egresso {
-        let mondo = Mondo::new(STANZE[0]);
-        let (realta, realta_luce) = render::genera_realta(&mondo);
-        let mut rng = Rng::new(0x5eed);
-        let polvere =
-            (0..90).map(|_| ((rng.f32() * LARGHEZZA as f32) as i32, (rng.f32() * 130.0) as i32, (10.0 + rng.f32() * 22.0) as u8)).collect();
-        Egresso {
+        let moduli = STANZE.map(|s| s.moduli_iniziali);
+        let mondo = Mondo::new(STANZE[RIVA_I], moduli[RIVA_I] as i32);
+        let x = (mondo.x_mondo(COLONNA_INIZIO) * TILE) as f32;
+        let (sfondo, sfondo_luce) = render::dipingi(&mondo);
+        let mut g = Egresso {
+            giocatore: Giocatore::new(x, Y_PORTA),
             mondo,
-            giocatore: Giocatore::new(STANZE[0].partenza),
             particelle: Particelle::new(),
-            scena: Scena::Gioco,
-            focus: None,
-            messaggio: None,
-            debug: false,
-            t: 0.0,
-            stanza: 0,
-            t_stanza: 0.0,
-            usati: [0; 3],
-            cadute: 0,
-            ritorni_all_atrio: 0,
-            lampo: None,
             sala: Sala::new(),
-            fermo: 0.0,
-            sbloccati: 0,
-            nuovo: None,
-            rng,
+            scena: Scena::Gioco,
+            stanza: RIVA_I,
+            moduli,
+            sforzo_totale: 0.0,
+            t: 0.0,
+            t_stanza: 0.0,
+            cam: 0.0,
+            scossa: 0.0,
+            foga: 0.0,
+            lette: [0; STANZE.len()],
+            lettura: None,
+            ha_capito: false,
+            t_muro: 0.0,
+            debug: false,
+            rng: Rng::new(0x5eed),
             font: Font::new(),
             luce: Framebuffer::new(LARGHEZZA, ALTEZZA),
             glow: Glow::new(LARGHEZZA, ALTEZZA),
-            realta,
-            realta_luce,
-            polvere,
+            sfondo,
+            sfondo_luce,
+        };
+        g.giocatore.verso = 1.0;
+        g.cam = g.cam_obiettivo();
+        g
+    }
+
+    /// Comincia dalla stanza `i`, entrando da sinistra (per provare le stanze).
+    pub fn entra(&mut self, i: usize) {
+        if i < STANZE.len() && i != self.stanza {
+            self.vai_stanza(i, -1);
         }
     }
 
-    /// Entra nella stanza `i` (dall'inizio). La texture della realtà viene
-    /// ridipinta: è l'unica allocazione, e succede solo al cambio di stanza.
-    fn vai_stanza(&mut self, i: usize) {
-        let stanza = STANZE[i];
+    fn cam_obiettivo(&self) -> f32 {
+        let max = (self.mondo.larg_px() - LARGHEZZA as f32).max(0.0);
+        (self.giocatore.pos.x + giocatore::LARG * 0.5 - LARGHEZZA as f32 * 0.5).clamp(0.0, max)
+    }
+
+    /// Passa nella stanza `i`, entrando dal lato `da` (-1 sinistra, 1 destra).
+    fn vai_stanza(&mut self, i: usize, da: i8) {
         self.stanza = i;
         self.t_stanza = 0.0;
-        self.mondo = Mondo::new(stanza);
-        let (realta, luce) = render::genera_realta(&self.mondo);
-        self.realta = realta;
-        self.realta_luce = luce;
-        self.giocatore = Giocatore::new(stanza.partenza);
+        self.mondo = Mondo::new(STANZE[i], self.moduli[i] as i32);
+        let x = if da < 0 { 1.0 } else { self.mondo.larg_px() - giocatore::LARG - 1.0 };
+        let vx = self.giocatore.vel.x;
+        let verso = self.giocatore.verso;
+        self.giocatore = Giocatore::new(x, Y_PORTA);
+        self.giocatore.vel.x = vx;
+        self.giocatore.verso = verso;
+        (self.sfondo, self.sfondo_luce) = render::dipingi(&self.mondo);
         self.particelle.clear();
-        self.focus = None;
-        self.lampo = None;
-        self.scena = Scena::Gioco;
+        self.lettura = None;
+        self.cam = self.cam_obiettivo();
         match i {
-            0 if self.ritorni_all_atrio > 0 => self.sala.di(Battuta::RitornoAllAtrio),
-            1 => self.sala.di(Battuta::Abisso),
+            ATRIO_I => self.sala.di(Battuta::Atrio),
+            GALLERIA_I => self.sala.di(Battuta::Galleria),
+            RIVA_I => self.sala.di(Battuta::Ritorno),
             _ => {}
         }
     }
 
-    /// Il protagonista è precipitato: riparte, e una voce commenta.
-    fn caduto(&mut self) {
-        let x = self.giocatore.rect().center().x;
-        // Era sopra una parola solo proposta?
-        let su_proposta = self.mondo.percetti.iter().any(|p| p.fase == Fase::Proposto && p.rect().x <= x && x <= p.rect().right());
-        self.cadute += 1;
-        if self.cadute == 1 {
-            self.sala.di(Battuta::PrimaCaduta);
-        } else if su_proposta {
-            self.dici(Voce::Controllo, "NON L'AVEVO DETTO.");
+    /// La Sala si allunga o si accorcia: `n` copie del modulo.
+    fn ridimensiona(&mut self, n: i32) {
+        let Some((inizio, larg)) = self.mondo.tratto_modulo() else { return };
+        let vecchio = self.mondo.moduli;
+        let w = (self.mondo.stanza.modulo.map_or(0, |m| m.1) * TILE) as f32;
+        let delta = (n - vecchio) as f32 * w;
+        let fine = inizio + larg;
+        let g = &mut self.giocatore;
+        if g.pos.x >= fine {
+            // Oltre il tratto ripetuto: il mondo scorre, e tu con lui.
+            g.pos.x += delta;
+            self.cam += delta;
+        } else if g.pos.x > inizio {
+            // Dentro il tratto: le copie sono identiche, basta restarci dentro.
+            g.pos.x = g.pos.x.min(fine + delta - giocatore::LARG - 0.5);
+        }
+        self.particelle.sposta_oltre(fine, delta);
+        self.mondo = Mondo::new(self.mondo.stanza, n);
+        (self.sfondo, self.sfondo_luce) = render::dipingi(&self.mondo);
+        self.scossa = 0.3;
+        // Polvere dove la Sala è cambiata.
+        let bordo = if g.pos.x >= fine { fine } else { fine + delta.min(0.0) };
+        for _ in 0..40 {
+            let pos = Vec2::new(bordo + self.rng.range(-4.0, 4.0), self.rng.range(20.0, 100.0));
+            let vel = Vec2::new(self.rng.range(-10.0, 10.0), self.rng.range(-5.0, 20.0));
+            let vita = self.rng.range(0.6, 1.4);
+            self.particelle.spawn(Particella { pos, vel, vita, durata: vita, colore: rgb(140, 120, 150), gravita: 30.0 });
+        }
+        if n > vecchio {
+            self.sala.di(Battuta::Cresce);
         } else {
-            self.dici(Voce::Paura, "VISTO? BURRONE.");
+            self.sala.di(Battuta::Rallenti);
         }
-        if self.stanza == 1 {
-            // Nell'Abisso, cadere è il momento di imparare a lasciar andare.
-            self.sala.di(Battuta::Invecchia);
-        }
-        self.giocatore.riparti();
     }
 
-    /// Le lettere solo proposte si sbriciolano sotto i piedi di chi ci passa.
-    fn sbriciola_proposte(&mut self) {
-        let g = self.giocatore.rect();
-        let t = TILE as f32;
-        let ty = ((g.bottom() + 1.0) / t).floor() as i32;
-        let (x0, x1) = ((g.x / t).floor() as i32, ((g.right() - 0.01) / t).floor() as i32);
-        for tx in x0..=x1 {
-            if let Some((_, voce)) = self.mondo.proposta_in(tx, ty) {
-                if self.rng.f32() < 0.5 {
-                    let pos = Vec2::new((tx * TILE) as f32 + self.rng.range(0.0, 7.0), (ty * TILE) as f32 + self.rng.range(0.0, 5.0));
-                    let vel = Vec2::new(self.rng.range(-6.0, 6.0), self.rng.range(10.0, 30.0));
-                    let vita = self.rng.range(0.5, 1.0);
-                    self.particelle.spawn(Particella {
-                        pos,
-                        vel,
-                        vita,
-                        durata: vita,
-                        colore: voce.colore(),
-                        lettera: ' ',
-                        gravita: 200.0,
-                        inclina: false,
-                    });
-                }
+    /// La regola dello sforzo, un passo alla volta.
+    fn sforzo(&mut self, moto: &Moto) {
+        self.foga += ((moto.sforzo.min(1.0)) - self.foga) * (6.0 * DT).min(1.0);
+        let Some((_, w)) = self.mondo.stanza.modulo else { return };
+        let m = &mut self.moduli[self.stanza];
+        if moto.sforzo > 0.0 {
+            let prima = *m;
+            *m = (*m + CRESCITA * DT).min(MAX_MODULI);
+            self.sforzo_totale += *m - prima;
+        } else {
+            let percorso = self.giocatore.vel.x.abs() * DT;
+            *m = (*m - percorso / (w * TILE) as f32 * RITIRO).max(0.0);
+        }
+        let n = self.moduli[self.stanza].floor() as i32;
+        if n != self.mondo.moduli {
+            self.ridimensiona(n);
+        }
+    }
+
+    /// La Sala commenta quello che fa il corpo.
+    fn commenti(&mut self, moto: &Moto) {
+        self.t_muro = if moto.contro_muro { self.t_muro + DT } else { 0.0 };
+        if self.t_muro > 1.0 {
+            self.sala.di(Battuta::Muro);
+        }
+        let g = &self.giocatore;
+        if g.in_acqua && g.rilassato {
+            let sup = self.mondo.superficie(g.rect().center());
+            if g.pos.y > sup + 14.0 {
+                self.sala.di(Battuta::Affonda);
+            }
+            // Vicino all'arco.
+            if self.stanza == RIVA_I && g.pos.x < (self.mondo.x_mondo(8) * TILE) as f32 {
+                self.sala.di(Battuta::Arco);
             }
         }
+        if moto.portato == Some(Fluido::Aria) && g.vel.y < -40.0 {
+            self.sala.di(Battuta::Vento);
+        }
     }
 
-    fn dici(&mut self, voce: Voce, testo: &'static str) {
-        self.messaggio = Some(Messaggio { testo, voce, t: 0.0 });
-    }
-
-    /// La percezione su cui agiscono E, Q, R: prima quelle con proposte
-    /// aperte, poi le parole nominate da te, infine quelle "di partenza".
-    fn scegli_focus(&self) -> Option<usize> {
+    /// Scritte: si leggono stando vicini per un attimo.
+    fn leggi(&mut self) {
         let c = self.giocatore.rect().center();
-        let mut migliore: Option<(u8, f32, usize)> = None;
-        for (i, p) in self.mondo.percetti.iter().enumerate() {
-            let classe = match p.fase {
-                Fase::Proposto => 0,
-                Fase::Affermato if p.def.iniziale.is_none() => 1,
-                Fase::Affermato => 2,
-                _ => continue,
-            };
-            let d = distanza_rect(c, &p.rect());
-            if d > DIST_FOCUS {
-                continue;
-            }
-            if migliore.is_none_or(|(mc, md, _)| (classe, d) < (mc, md)) {
-                migliore = Some((classe, d, i));
+        let mut vicina = None;
+        for (i, s) in self.mondo.stanza.scritte.iter().enumerate() {
+            let r = render::rect_scritta(&self.mondo, s);
+            let d = render::distanza_rect(c, &r);
+            if d < 28.0 {
+                vicina = Some(i);
             }
         }
-        migliore.map(|(_, _, i)| i)
-    }
-
-    fn scintille_su(&mut self, i: usize, quante: usize) {
-        let p = &self.mondo.percetti[i];
-        let pr = &p.def.proposte[p.scelta];
-        let colore = pr.voce.colore();
-        for k in 0..pr.celle {
-            let (tx, ty) = pr.cella(k);
-            for _ in 0..quante {
-                let pos = Vec2::new((tx * TILE) as f32 + self.rng.range(0.0, 8.0), (ty * TILE) as f32 + self.rng.range(0.0, 8.0));
-                let vel = Vec2::new(self.rng.range(-12.0, 12.0), self.rng.range(-30.0, -5.0));
-                self.particelle.spawn(Particella { pos, vel, vita: 0.5, durata: 0.5, colore, lettera: ' ', gravita: 0.0, inclina: false });
-            }
-        }
-    }
-
-    fn gestisci_eventi(&mut self) {
-        for e in self.mondo.eventi.drain(..) {
-            match e {
-                Evento::LetteraCaduta { pos, lettera, voce } => {
-                    let vel = Vec2::new(self.rng.range(-15.0, 15.0), self.rng.range(-40.0, -10.0));
-                    self.particelle.spawn(Particella {
-                        pos,
-                        vel,
-                        vita: 6.0,
-                        durata: 6.0,
-                        colore: voce.colore(),
-                        lettera,
-                        gravita: 300.0,
-                        inclina: voce == Voce::Memoria,
-                    });
-                }
-                Evento::LetteraSciolta { pos, voce, .. } => {
-                    for _ in 0..7 {
-                        let p = pos + Vec2::new(self.rng.range(0.0, 5.0), self.rng.range(0.0, 7.0));
-                        let vel = Vec2::new(self.rng.range(-18.0, 18.0), self.rng.range(-45.0, -8.0));
-                        let vita = self.rng.range(0.6, 1.6);
-                        self.particelle.spawn(Particella {
-                            pos: p,
-                            vel,
-                            vita,
-                            durata: vita,
-                            colore: voce.colore(),
-                            lettera: ' ',
-                            gravita: -10.0,
-                            inclina: false,
-                        });
-                    }
-                }
-                Evento::Mutazione { percetto } => {
-                    // La Sala commenta i nomi che marciscono.
-                    let p = &self.mondo.percetti[percetto as usize];
-                    let pr = &p.def.proposte[p.scelta];
-                    let natura = pr.lemma.stati[p.stato].natura;
-                    if std::ptr::eq(pr.lemma, &lessico::BURRONE) && natura == Natura::Scivolosa {
-                        self.sala.di(Battuta::Burro);
-                    } else if natura == Natura::Vuota {
-                        self.sala.di(Battuta::Invecchia);
-                    }
+        self.lettura = match (vicina, self.lettura) {
+            (Some(i), Some((j, t))) if i == j => Some((i, t + DT)),
+            (Some(i), _) => Some((i, 0.0)),
+            (None, _) => None,
+        };
+        if let Some((i, t)) = self.lettura {
+            if t > 0.6 {
+                self.lette[self.stanza] |= 1 << i;
+                if (self.stanza, i) == INDIZIO {
+                    self.ha_capito = true;
                 }
             }
         }
     }
 
-    /// Scintille sul bordo delle rivelazioni aperte.
-    fn bordo_rivelazioni(&mut self) {
-        for k in 0..self.mondo.rivelazioni.len() {
-            let r = self.mondo.rivelazioni[k];
-            let raggio = r.raggio();
-            if raggio < 4.0 {
-                continue;
-            }
-            for _ in 0..2 {
-                let a = self.rng.range(0.0, std::f32::consts::TAU);
-                let pos = r.centro + Vec2::new(a.cos(), a.sin()) * (raggio + self.rng.range(-2.0, 3.0));
-                let colore = if self.rng.f32() < 0.6 {
-                    crate::engine::framebuffer::rgb(255, 228, 180)
-                } else {
-                    crate::engine::framebuffer::rgb(170, 235, 255)
-                };
-                let vita = self.rng.range(0.3, 0.8);
-                self.particelle.spawn(Particella {
-                    pos,
-                    vel: Vec2::new(0.0, -8.0),
-                    vita,
-                    durata: vita,
-                    colore,
-                    lettera: ' ',
-                    gravita: 0.0,
-                    inclina: false,
-                });
-            }
+    fn particelle_del_corpo(&mut self) {
+        let g = &self.giocatore;
+        let c = g.rect().center();
+        if self.foga > 0.5 && self.rng.f32() < 0.5 {
+            let pos = c + Vec2::new(self.rng.range(-3.0, 3.0), self.rng.range(-6.0, 0.0));
+            let vel = Vec2::new(self.rng.range(-20.0, 20.0), self.rng.range(-40.0, -10.0));
+            self.particelle.spawn(Particella { pos, vel, vita: 0.4, durata: 0.4, colore: rgb(255, 170, 80), gravita: 120.0 });
+        }
+        if g.in_acqua && self.rng.f32() < 0.08 {
+            let pos = Vec2::new(c.x + self.rng.range(-2.0, 2.0), g.pos.y);
+            let vita = self.rng.range(0.8, 1.6);
+            self.particelle.spawn(Particella {
+                pos,
+                vel: Vec2::new(0.0, -18.0),
+                vita,
+                durata: vita,
+                colore: rgb(150, 200, 230),
+                gravita: -6.0,
+            });
         }
     }
-
-    /// Cosa sta toccando il corpo: porte, trappole, il varco.
-    fn contatti(&mut self) {
-        let corpo = self.giocatore.rect();
-        let t = TILE as f32;
-        let x0 = (corpo.x / t).floor() as i32;
-        let x1 = ((corpo.right() + 1.0) / t).floor() as i32;
-        let y0 = (corpo.y / t).floor() as i32;
-        let y1 = ((corpo.bottom() - 0.5) / t).floor() as i32;
-        for ty in y0..=y1 {
-            for tx in x0..=x1 {
-                let cella = Rect::new(tx as f32 * t, ty as f32 * t, t, t);
-                if !cella.expand(0.5).overlaps(&corpo) {
-                    continue;
-                }
-                if let Some(c) = self.mondo.cella(tx, ty) {
-                    match c.natura {
-                        Natura::Porta => {
-                            self.scena = Scena::Atrio(0.0);
-                            self.ritorni_all_atrio += 1;
-                            return;
-                        }
-                        Natura::Trappola => {
-                            self.giocatore.riparti();
-                            self.dici(Voce::Paura, "TE L'AVEVO DETTO.");
-                            return;
-                        }
-                        _ => {}
-                    }
-                }
-                if self.mondo.reale(tx, ty) == Reale::Varco && self.mondo.rivelato(cella.center()) > 0.5 {
-                    self.scena = Scena::Uscito(0.0);
-                    return;
-                }
-            }
-        }
-    }
-}
-
-/// Un tasto è attivo solo se la Sala ha già sbloccato il suo comando.
-fn consentito(sbloccati: u8, k: Key) -> bool {
-    let serve = match k {
-        Key::Left | Key::Right | Key::A | Key::D => comando::MUOVI,
-        Key::Space | Key::W | Key::Up => comando::SALTA,
-        Key::E => comando::DI,
-        Key::Q => comando::VOCE,
-        Key::R => comando::LASCIA,
-        _ => return true,
-    };
-    sbloccati & serve != 0
 }
 
 impl Default for Egresso {
@@ -369,133 +290,71 @@ impl Game for Egresso {
         if input.pressed(Key::F3) {
             self.debug = !self.debug;
         }
-        if let Some(m) = &mut self.messaggio {
-            m.t += DT;
-            if m.t > 2.5 {
-                self.messaggio = None;
+        self.sala.update(DT);
+        self.particelle.update(DT);
+        self.scossa = (self.scossa - DT).max(0.0);
+
+        if let Scena::Uscito(t) = self.scena {
+            self.scena = Scena::Uscito(t + DT);
+            if t > 2.5 && (input.pressed(Key::Enter) || input.pressed(Key::Space)) {
+                *self = Egresso::new();
             }
-        }
-        let nuovi = self.sala.update(DT) & !self.sbloccati;
-        if nuovi != 0 {
-            self.sbloccati |= nuovi;
-            self.nuovo = Some((nuovi, 0.0));
-        }
-        if let Some((c, t)) = self.nuovo {
-            self.nuovo = if t < 4.0 { Some((c, t + DT)) } else { None };
-        }
-
-        match self.scena {
-            Scena::Atrio(t) => {
-                self.scena = Scena::Atrio(t + DT);
-                if t > 2.8 {
-                    self.vai_stanza(0);
-                }
-                return;
-            }
-            Scena::Uscito(t) => {
-                self.scena = Scena::Uscito(t + DT);
-                if t > 2.0 && (input.pressed(Key::Enter) || input.pressed(Key::Space)) {
-                    *self = Egresso::new();
-                }
-                return;
-            }
-            Scena::Gioco => {}
-        }
-
-        // I tasti non ancora sbloccati dalla Sala non fanno niente.
-        let sb = self.sbloccati;
-        let filtrato = input.filtra(|k| consentito(sb, k));
-        let input = &filtrato;
-
-        self.t_stanza += DT;
-        if self.t > 2.2 && self.stanza == 0 {
-            self.sala.di(Battuta::Benvenuto);
-        }
-        // Chi non fa niente, a volte, fa la cosa giusta.
-        let attivo =
-            input.any_pressed() || [Key::Left, Key::Right, Key::A, Key::D, Key::Space, Key::W, Key::Up].iter().any(|&k| input.down(k));
-        self.fermo = if attivo { 0.0 } else { self.fermo + DT };
-        if self.fermo > 8.0 && self.stanza > 0 {
-            self.sala.di(Battuta::Fermo);
-        }
-        if let Some((i, t)) = self.lampo {
-            self.lampo = if t - DT > 0.0 { Some((i, t - DT)) } else { None };
-        }
-
-        if self.giocatore.update(input, &mut self.mondo, true) == Esito::Caduto {
-            self.caduto();
-        }
-        self.sbriciola_proposte();
-
-        // Oltre il bordo destro: la stanza successiva.
-        let max_x = (COLONNE * TILE) as f32 - giocatore::LARG;
-        if self.mondo.stanza.uscita_destra && self.giocatore.pos.x >= max_x - 0.5 && self.stanza + 1 < STANZE.len() {
-            self.vai_stanza(self.stanza + 1);
             return;
         }
 
-        self.focus = self.scegli_focus();
-        if let Some(i) = self.focus {
-            if input.pressed(Key::Q) {
-                self.mondo.prossima_voce(i);
-                self.usati[1] = self.usati[1].saturating_add(1);
+        self.t_stanza += DT;
+        if self.t > 1.5 && self.stanza == RIVA_I {
+            self.sala.di(Battuta::Benvenuto);
+        }
+
+        let moto = self.giocatore.update(input, &self.mondo, self.t);
+        match moto.esito {
+            Esito::Varco => {
+                self.scena = Scena::Uscito(0.0);
+                return;
             }
-            if input.pressed(Key::E) && self.mondo.percetti[i].fase == Fase::Proposto {
-                if self.mondo.afferma(i, self.giocatore.rect()) {
-                    self.usati[0] = self.usati[0].saturating_add(1);
-                    self.lampo = Some((i, 0.35));
-                    self.sala.di(Battuta::PrimoNome);
-                    self.scintille_su(i, 3);
-                } else {
-                    self.dici(Voce::Controllo, "NON QUI. CI SONO IO.");
+            Esito::Bordo(d) => {
+                let st = self.mondo.stanza;
+                let dest = if d < 0 { st.sinistra } else { st.destra };
+                if let Some(i) = dest {
+                    self.vai_stanza(i, -d);
+                    return;
                 }
             }
-            if input.pressed(Key::R) {
-                self.mondo.lascia(i);
-                self.sala.di(Battuta::PrimoLasciare);
-                self.usati[2] = self.usati[2].saturating_add(1);
-            }
+            Esito::Niente => {}
         }
+        self.sforzo(&moto);
+        self.commenti(&moto);
+        self.leggi();
+        self.particelle_del_corpo();
 
-        self.mondo.update(DT, self.giocatore.rect());
-        // La prima volta che percepisci qualcosa, la Sala può avere da dire.
-        for k in 0..self.mondo.percetti.len() {
-            let p = &self.mondo.percetti[k];
-            if let (Some(b), false) = (p.def.copione, matches!(p.fase, Fase::Ignoto)) {
-                self.sala.di(b);
-            }
-        }
-        self.gestisci_eventi();
-        self.bordo_rivelazioni();
-        self.contatti();
+        let obiettivo = self.cam_obiettivo();
+        self.cam += (obiettivo - self.cam) * (5.0 * DT).min(1.0);
+    }
 
-        self.particelle.update(DT, &self.mondo);
+    fn render(&mut self, fb: &mut Framebuffer, stats: &Stats) {
+        self.disegna(fb, stats);
     }
 
     fn comandi(&self) -> u32 {
-        self.sbloccati as u32
+        // Sul telefono: solo muoversi e saltare.
+        0b11
     }
 
     fn traccia(&self) -> String {
         let g = &self.giocatore;
-        let fasi: Vec<String> = self.mondo.percetti.iter().map(|p| format!("{:?}", p.fase).chars().take(4).collect()).collect();
         format!(
-            "sb {:05b} stanza {} pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
-            self.sbloccati,
+            "stanza {} pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} acqua {} moduli {:?} foga {:.2}",
             self.stanza,
             g.pos.x,
             g.pos.y,
             g.vel.x,
             g.vel.y,
             g.a_terra as u8,
-            self.focus,
-            self.scena,
-            fasi.join(",")
+            g.in_acqua as u8,
+            self.moduli.map(|m| (m * 10.0).round() / 10.0),
+            self.foga
         )
-    }
-
-    fn render(&mut self, fb: &mut Framebuffer, stats: &Stats) {
-        self.disegna(fb, stats);
     }
 }
 
@@ -503,94 +362,132 @@ impl Game for Egresso {
 mod tests {
     use super::*;
 
-    /// Simula `passi` update con i tasti `giu` tenuti premuti; `tocca` viene
-    /// premuto a ogni passo (e rilasciato subito).
-    fn gioca(g: &mut Egresso, passi: usize, giu: &[Key], tocca: Option<Key>) {
+    /// Gioca `secondi` tenendo premuti `tasti`.
+    fn gioca(g: &mut Egresso, tasti: &[Key], secondi: f32) {
         let mut input = Input::new();
-        for _ in 0..passi {
-            for &k in giu {
-                input.set(k, true);
-            }
-            if let Some(k) = tocca {
-                input.set(k, true);
-            }
+        for &k in tasti {
+            input.set(k, true);
+        }
+        for _ in 0..(secondi / DT) as usize {
             g.update(&input);
             input.fine_passo();
-            if let Some(k) = tocca {
-                input.set(k, false);
+            if g.scena != Scena::Gioco {
+                return;
             }
         }
     }
 
-    /// Gioca finché `fatto` diventa vero (al massimo `max` passi).
-    fn fino_a(g: &mut Egresso, max: usize, giu: &[Key], fatto: impl Fn(&Egresso) -> bool) -> bool {
-        for _ in 0..max {
+    /// Gioca finché `fatto` non è vero (al massimo `secondi`).
+    fn fino_a(g: &mut Egresso, tasti: &[Key], secondi: f32, fatto: impl Fn(&Egresso) -> bool) -> bool {
+        let mut input = Input::new();
+        for &k in tasti {
+            input.set(k, true);
+        }
+        for _ in 0..(secondi / DT) as usize {
             if fatto(g) {
                 return true;
             }
-            gioca(g, 1, giu, None);
+            g.update(&input);
+            input.fine_passo();
         }
         fatto(g)
     }
 
     #[test]
-    fn all_inizio_i_comandi_sono_bloccati() {
-        let mut g = Egresso::new();
-        gioca(&mut g, 30, &[Key::Right], Some(Key::E));
-        assert_eq!(g.sbloccati, 0);
-        assert_eq!(g.giocatore.pos.x, STANZE[0].partenza.0, "non si muove finché la Sala non dice CAMMINA");
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0), "la Sala sblocca il cammino");
-        assert_eq!(g.sbloccati & comando::DI, 0, "dare un nome arriva dopo");
+    fn si_comincia_sulla_riva_con_la_sala_gia_lunga() {
+        let g = Egresso::new();
+        assert_eq!(g.stanza, RIVA_I);
+        assert_eq!(g.mondo.moduli, 8);
+        assert!(g.cam > 0.0, "l'arco è fuori dallo schermo");
     }
 
     #[test]
-    fn nell_atrio_si_cade_nel_vuoto_non_detto() {
+    fn camminando_a_destra_si_arriva_all_atrio() {
         let mut g = Egresso::new();
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0));
-        gioca(&mut g, 400, &[Key::Right], None);
-        assert_eq!(g.stanza, 0, "senza dire PONTE non si passa");
-        assert!(g.cadute >= 1);
+        assert!(fino_a(&mut g, &[Key::Right], 5.0, |g| g.stanza == ATRIO_I));
     }
 
     #[test]
-    fn dicendo_ponte_si_arriva_all_abisso() {
+    fn forzare_contro_la_raffica_allunga_l_atrio() {
         let mut g = Egresso::new();
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::MUOVI != 0));
-        assert!(fino_a(&mut g, 300, &[Key::Right], |g| g.giocatore.pos.x >= 92.0));
-        // La Sala spiega il vuoto e sblocca E.
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::DI != 0), "la Sala sblocca il dare un nome");
-        assert_eq!(g.mondo.percetti[2].fase, Fase::Proposto);
-        gioca(&mut g, 1, &[], Some(Key::E));
-        assert_eq!(g.mondo.percetti[2].fase, Fase::Affermato);
-        assert!(fino_a(&mut g, 400, &[Key::Right], |g| g.stanza == 1), "oltre il bordo destro c'è l'Abisso");
-        assert_eq!(g.cadute, 0, "il PONTE detto regge");
+        g.vai_stanza(ATRIO_I, -1);
+        // Tiene premuto a destra per 10 secondi, raffiche comprese.
+        gioca(&mut g, &[Key::Right], 10.0);
+        assert!(g.mondo.moduli > 0, "moduli: {}", g.mondo.moduli);
     }
 
     #[test]
-    fn l_abisso_insegna_a_saltare_e_ad_ascoltare_le_voci() {
+    fn camminando_tra_le_raffiche_l_atrio_si_attraversa() {
         let mut g = Egresso::new();
-        g.sbloccati = comando::MUOVI | comando::DI;
-        g.vai_stanza(1);
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::SALTA != 0));
-        assert!(fino_a(&mut g, 300, &[Key::Right], |g| g.giocatore.pos.x >= 100.0));
-        assert!(fino_a(&mut g, 60 * 15, &[], |g| g.sbloccati & comando::VOCE != 0), "tre voci: si sblocca Q");
-        assert_eq!(g.sbloccati & comando::LASCIA, 0, "lasciar andare arriva per ultimo");
+        g.vai_stanza(ATRIO_I, -1);
+        let mut input = Input::new();
+        let d = &stanze::ATRIO.correnti[0];
+        for _ in 0..(40.0 / DT) as usize {
+            // Cammina solo quando non soffia e non sta per soffiare; se no si ripara.
+            let x = g.giocatore.rect().center().x;
+            let (tx, ty) = Mondo::tile(Vec2::new(x, 90.0));
+            let calmo = !mondo::attiva(d, g.t) && mondo::preavviso(d, g.t) == 0.0;
+            let riparato = g.mondo.riparato(tx, ty, d) && g.mondo.solido(tx + 1, ty);
+            let vai = calmo || !riparato && !mondo::attiva(d, g.t);
+            input.set(Key::Right, vai);
+            // Davanti a un blocco si salta (tenendo premuto, per saltare alto).
+            let blocco = g.mondo.solido(Mondo::tile(Vec2::new(x + 6.0, 90.0)).0, ty);
+            input.set(Key::Space, vai && (blocco || !g.giocatore.a_terra));
+            g.update(&input);
+            input.fine_passo();
+            if g.stanza == GALLERIA_I {
+                break;
+            }
+        }
+        assert_eq!(g.stanza, GALLERIA_I);
+        assert_eq!(g.moduli[ATRIO_I].floor(), 0.0, "l'Atrio non è cresciuto");
     }
 
     #[test]
-    fn la_porta_nominata_riporta_all_atrio() {
+    fn vicino_alla_riva_l_acqua_e_ferma() {
         let mut g = Egresso::new();
-        g.sbloccati = comando::TUTTI;
-        g.vai_stanza(1);
-        g.giocatore.pos.x = 280.0;
-        gioca(&mut g, 90, &[], None);
-        assert_eq!(g.mondo.percetti[4].fase, Fase::Proposto);
-        gioca(&mut g, 1, &[], Some(Key::E));
-        gioca(&mut g, 60, &[Key::Right], None);
-        assert!(matches!(g.scena, Scena::Atrio(_)));
-        gioca(&mut g, 200, &[], None);
-        assert_eq!(g.stanza, 0);
+        assert!(fino_a(&mut g, &[Key::Left], 6.0, |g| g.giocatore.in_acqua));
+        gioca(&mut g, &[], 20.0);
         assert_eq!(g.scena, Scena::Gioco);
-        assert_eq!(g.sbloccati, comando::TUTTI, "i comandi imparati restano");
+        assert!(g.giocatore.in_acqua);
+    }
+
+    #[test]
+    fn dalla_riva_l_aria_porta_sulla_mensola() {
+        let mut g = Egresso::new();
+        // Camminare piano accorcia la Riva: la colonna va ricalcolata a ogni passo.
+        assert!(fino_a(&mut g, &[Key::Left], 6.0, |g| g.giocatore.pos.x < (g.mondo.x_mondo(26) * TILE) as f32 + 6.0));
+        // Fermo nella colonna d'aria: sale.
+        assert!(fino_a(&mut g, &[], 4.0, |g| g.giocatore.pos.y < 30.0));
+        // A sinistra, sulla mensola.
+        assert!(fino_a(&mut g, &[Key::Left], 3.0, |g| g.giocatore.a_terra && g.giocatore.pos.y == 48.0 - giocatore::ALT));
+    }
+
+    #[test]
+    fn lasciandosi_portare_dal_canale_si_esce() {
+        let mut g = Egresso::new();
+        // Sulla mensola, cammina a sinistra fino a cadere nel canale...
+        g.giocatore.pos = Vec2::new((g.mondo.x_mondo(14) * TILE) as f32, 48.0 - giocatore::ALT);
+        assert!(fino_a(&mut g, &[Key::Left], 10.0, |g| g.giocatore.in_acqua));
+        // ...e non tocca più niente.
+        assert!(fino_a(&mut g, &[], 40.0, |g| matches!(g.scena, Scena::Uscito(_))));
+    }
+
+    #[test]
+    fn nuotando_verso_l_arco_non_si_esce() {
+        let mut g = Egresso::new();
+        assert!(fino_a(&mut g, &[Key::Left], 6.0, |g| g.giocatore.in_acqua));
+        gioca(&mut g, &[Key::Left], 30.0);
+        assert_eq!(g.scena, Scena::Gioco);
+    }
+
+    #[test]
+    fn leggere_la_nuotatrice_fa_capire() {
+        let mut g = Egresso::new();
+        g.vai_stanza(GALLERIA_I, -1);
+        let s = &stanze::GALLERIA.scritte[INDIZIO.1];
+        g.giocatore.pos = Vec2::new((s.x * TILE + 20) as f32, 28.0);
+        gioca(&mut g, &[], 1.5);
+        assert!(g.ha_capito);
     }
 }

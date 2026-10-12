@@ -1,6 +1,6 @@
 # EGRESSO: game design doc
 
-*Nome provvisorio. Versione 0.3: la Sala che cresce. **Bozza da rivedere insieme**: nessun codice di gameplay finché non è approvata.*
+*Nome provvisorio. Versione 0.3: la Sala che cresce. Approvata; il primo prototipo (tre stanze) è nel codice.*
 
 La versione precedente (il mondo scritto) è in [`archivio/CONCEPT-v0.2.md`](archivio/CONCEPT-v0.2.md); perché è stata messa da parte è raccontato in [`diario/04-revisione.md`](diario/04-revisione.md).
 
@@ -81,7 +81,7 @@ La voce della Sala resta dal prototipo, ma cambia ruolo. Non spiega i comandi: *
 
 | Stanza | Cosa insegna | Cosa apre |
 |---|---|---|
-| **Riva** (inizio) | ti svegli nell'acqua; per entrare devi nuotare *contro* la corrente | è l'uscita |
+| **Riva** (inizio) | ti svegli sulla riva; il canale che porta all'arco è oltre una diga, e ci si arriva solo dall'alto, con l'aria | è l'uscita |
 | **Atrio** | il corridoio che si allunga se corri | il resto della Sala |
 | **Galleria delle Correnti** | le correnti respingono chi le forza e portano chi le segue | una via nascosta verso la Stanza della Nuotatrice |
 | **Serra** | i germogli crescono se li lasci in pace | una scorciatoia verso l'alto |
@@ -111,16 +111,26 @@ Si esce lasciandosi portare dalla corrente, **non stando fermi**. Ci si arriva s
 - **Resta la Sala**, con un ruolo nuovo, e il font scritto a mano, che diventa la base degli inchiostri.
 - **Va in archivio:** nomi, tre voci, parole che invecchiano, realtà nascosta.
 
-## 7. Primo prototipo (quando il concept è approvato)
-Tre stanze, Riva, Atrio e Galleria delle Correnti, con:
-- la regola dello sforzo (corridoio che si allunga e si accorcia);
-- le correnti;
-- due inchiostri sui muri, il Cartografo e la Nuotatrice;
-- la scorciatoia vera: lasciarsi portare dalla corrente della Riva.
+## 7. Il primo prototipo (fatto)
+Tre stanze: Riva, Atrio e Galleria delle Correnti. Ci sono:
+- la regola dello sforzo: la Riva e l'Atrio hanno un tratto che si ripete quando forzi e si ritira quando li attraversi con calma;
+- le correnti d'acqua e d'aria, con la regola "chi si muove resta dov'è, chi si lascia andare viene portato";
+- il vento a raffiche dell'Atrio, con i ripari;
+- tre inchiostri sui muri: il Cartografo, la Nuotatrice, il Curatore;
+- l'uscita vera: dalla Riva, salire con l'aria sulla mensola, scendere nel canale e lasciarsi portare sotto il labbro di roccia.
+
+Una scoperta del primo test: se il canale è raggiungibile a nuoto dalla riva, si esce dopo dieci secondi, per caso, lasciando il pulsante. Per questo c'è la diga. **Ogni uscita deve chiedere almeno due cose capite**, qui l'aria e l'acqua.
 
 Il prototipo è riuscito se chi lo prova scopre l'uscita **senza che gliela si spieghi**.
 
-## 8. Domande aperte
+## 8. La scala del gioco
+Tre stanze servono a provare le regole, non bastano a viverle. Il gioco completo ha bisogno di **molte più stanze**: la mappa del punto 3 è solo l'ossatura, e ogni sua voce diventerà un gruppo di stanze. Si cresce un pezzo alla volta, verificando ogni pezzo giocandolo:
+1. completare l'ossatura (Serra, Archivio, Pozzo, le due celle), una regola nuova per volta;
+2. i doni della Sala: abilità e chiavi che funzionano ma allargano la mappa;
+3. il tuo inchiostro e la scoperta della matita;
+4. una mappa consultabile, che registra le stanze ma non i segreti.
+
+## 9. Domande aperte
 - Il segno che lascia il giocatore: scrive parole libere, o solo un simbolo?
 - Quanto si deve vedere la regola dello sforzo? Un indicatore, o solo il mondo che cambia?
 - Il Curatore e la Sala sono la stessa voce?

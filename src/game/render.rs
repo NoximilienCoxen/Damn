@@ -1,55 +1,162 @@
 //! Come si disegna EGRESSO.
 //!
-//! Ordine di un frame:
-//! 1. buio e polvere;
-//! 2. la realtà, solo dentro le rivelazioni (texture procedurale pre-calcolata);
-//! 3. le lettere nominate, le proposte delle voci, gli attributi dei sensi;
-//! 4. particelle e protagonista;
-//! 5. glow: tutto ciò che emette luce è stato disegnato anche nel buffer
-//!    `luce`, che viene sfocato e sommato all'immagine;
-//! 6. interfaccia (biglietti, messaggi, suggerimenti), nitida sopra il glow.
-//!
-//! Prima del glow c'è anche il "vuoto visibile": pulviscolo che cade nelle
-//! colonne dove sotto i piedi non c'è niente di nominato.
+//! La stanza (roccia, muri, lanterne, l'arco) viene dipinta **una volta** in
+//! un'immagine larga quanto il mondo, già illuminata dalle luci fisse; si
+//! ridipinge solo quando la stanza cambia forma. Ogni frame:
+//! 1. si copia la finestra della telecamera;
+//! 2. la lanterna del protagonista schiarisce intorno a lui (brucia più forte
+//!    quando forza);
+//! 3. acqua e correnti, visibili come scie che scorrono;
+//! 4. le scritte sui muri, leggibili in proporzione alla luce;
+//! 5. particelle, protagonista, la voce della Sala;
+//! 6. glow: ciò che emette luce è disegnato anche nel buffer `luce`;
+//! 7. interfaccia.
 
-use super::lessico::{Natura, Voce};
-use super::livello::{COLONNE, RIGHE, TILE};
-use super::mondo::{Fase, Mondo, Reale};
-use super::sala::comando;
+use super::mondo::{self, Mondo};
+use super::stanze::{Fluido, Inchiostro, Scritta, RIGHE, TILE};
 use super::{Egresso, Scena};
-use crate::engine::app::{Stats, ALTEZZA, LARGHEZZA};
+use crate::engine::app::{Stats, LARGHEZZA};
 use crate::engine::font::{misura, Font, AVANZAMENTO};
 use crate::engine::framebuffer::{mix, rgb, scala, Framebuffer};
-use crate::engine::math::{hash01, Vec2};
+use crate::engine::math::{hash01, Rect, Vec2};
 
-const SFONDO: u32 = rgb(6, 5, 12);
-const ATTRIBUTO: u32 = rgb(150, 140, 200);
+const ALTEZZA_MONDO: i32 = RIGHE * TILE;
+const INTERLINEA: i32 = 9;
+const RAGGIO_LANTERNA: f32 = 100.0;
 
-const BAYER: [[f32; 4]; 4] = [
-    [0.0 / 16.0, 8.0 / 16.0, 2.0 / 16.0, 10.0 / 16.0],
-    [12.0 / 16.0, 4.0 / 16.0, 14.0 / 16.0, 6.0 / 16.0],
-    [3.0 / 16.0, 11.0 / 16.0, 1.0 / 16.0, 9.0 / 16.0],
-    [15.0 / 16.0, 7.0 / 16.0, 13.0 / 16.0, 5.0 / 16.0],
-];
+/// Distanza di un punto da un rettangolo (0 se è dentro).
+pub fn distanza_rect(p: Vec2, r: &Rect) -> f32 {
+    let dx = (r.x - p.x).max(p.x - r.right()).max(0.0);
+    let dy = (r.y - p.y).max(p.y - r.bottom()).max(0.0);
+    (dx * dx + dy * dy).sqrt()
+}
+
+/// Dove sta una scritta nel mondo, in pixel.
+pub fn rect_scritta(m: &Mondo, s: &Scritta) -> Rect {
+    let larg = s.righe.iter().map(|r| misura(r)).max().unwrap_or(0);
+    let x = m.x_mondo(s.x) * TILE;
+    Rect::new(x as f32, (s.y * TILE) as f32, larg as f32, (s.righe.len() as i32 * INTERLINEA) as f32)
+}
+
+/// Le lanterne della stanza, in pixel del mondo.
+fn lanterne(m: &Mondo) -> impl Iterator<Item = Vec2> + '_ {
+    m.stanza.lanterne.iter().map(|&(x, y)| Vec2::new((m.x_mondo(x) * TILE + 4) as f32, (y * TILE + 3) as f32))
+}
+
+/// Il centro dell'arco verso fuori, se la stanza ce l'ha.
+fn arco(m: &Mondo) -> Option<Vec2> {
+    let righe: Vec<i32> = (0..RIGHE).filter(|&y| m.cella(0, y) == b'O').collect();
+    let (a, b) = (*righe.first()?, *righe.last()?);
+    Some(Vec2::new(4.0, ((a + b + 1) * TILE) as f32 * 0.5))
+}
+
+fn luce_lanterna(p: Vec2, c: Vec2) -> f32 {
+    (1.0 - (p - c).len() / RAGGIO_LANTERNA).max(0.0).powf(1.5) * 1.3
+}
+
+/// Dipinge la stanza intera: l'immagine e la sua parte emissiva.
+pub fn dipingi(m: &Mondo) -> (Vec<u32>, Vec<u32>) {
+    let w = m.larg * TILE;
+    let h = ALTEZZA_MONDO;
+    let mut img = vec![0u32; (w * h) as usize];
+    let mut luce = vec![0u32; (w * h) as usize];
+    let t = TILE;
+    let luci: Vec<Vec2> = lanterne(m).collect();
+    let arco = arco(m);
+
+    for y in 0..h {
+        for x in 0..w {
+            let (tx, ty) = (x / t, y / t);
+            let cella = m.cella(tx, ty);
+            let sopra_libero = !m.solido(tx, ty - 1);
+            let n = hash01(x, y, 7) * 0.06 - 0.03;
+            // Le texture usano la colonna della mappa base: le copie del modulo si somigliano.
+            let bx = m.x_base(tx) * t + x % t;
+            let (mut r, mut g, mut b): (f32, f32, f32) = match cella {
+                b'#' => {
+                    let fila = y / 4;
+                    let ox = if fila % 2 == 0 { 0 } else { 4 };
+                    let blocco = hash01((bx + ox) / 8, fila, 11);
+                    let malta = (bx + ox) % 8 == 0 || y % 4 == 0;
+                    let mut k = if malta { 0.6 } else { 0.8 + 0.4 * blocco };
+                    if sopra_libero && y % t == 0 {
+                        k = 1.5;
+                    }
+                    (92.0 * k, 80.0 * k, 104.0 * k)
+                }
+                b'O' => {
+                    let v = (y % (t * 2)) as f32 / (t * 2) as f32;
+                    luce[(y * w + x) as usize] = rgb(200, 170, 120);
+                    (255.0, 240.0 - 35.0 * v, 200.0 - 50.0 * v)
+                }
+                _ => {
+                    // Il muro di fondo: mattoni grandi e scuri.
+                    let fila = y / 8;
+                    let ox = if fila % 2 == 0 { 0 } else { 8 };
+                    let mattone = hash01((bx + ox) / 16, fila, 3);
+                    let malta = (bx + ox) % 16 == 0 || y % 8 == 0;
+                    let k = if malta { 0.55 } else { 0.8 + 0.35 * mattone };
+                    (24.0 * k, 19.0 * k, 34.0 * k)
+                }
+            };
+            // Muschio sulle superfici libere.
+            if cella == b'#' && sopra_libero && y % t < 2 && hash01(x, y, 5) < 0.45 {
+                let mm = hash01(x, y, 6);
+                (r, g, b) = if mm < 0.6 { (60.0, 118.0, 62.0) } else { (112.0, 170.0, 84.0) };
+            }
+            if cella != b'O' {
+                let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
+                let l = 0.3 + luci.iter().map(|&c| luce_lanterna(p, c)).sum::<f32>();
+                // La luce di fuori, che entra dall'arco.
+                let lv = arco.map_or(0.0, |a| (1.0 - (p - a).len() / 150.0).max(0.0).powf(1.4) * 1.4);
+                r = r * (l * 1.12 + lv * 1.3) + 255.0 * n;
+                g = g * (l + lv * 1.1) + 255.0 * n;
+                b = b * (l * 0.82 + lv * 0.8) + 255.0 * n;
+            }
+            img[(y * w + x) as usize] = rgb(r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
+        }
+    }
+
+    // Le lanterne: catena e corpo luminoso.
+    for c in luci {
+        let (x, y) = (c.x as i32, c.y as i32 - 3);
+        let mut px = |xx: i32, yy: i32, col: u32, l: bool| {
+            if (0..w).contains(&xx) && (0..h).contains(&yy) {
+                img[(yy * w + xx) as usize] = col;
+                if l {
+                    luce[(yy * w + xx) as usize] = rgb(255, 190, 100);
+                }
+            }
+        };
+        for yy in y - 20..y {
+            px(x, yy, rgb(90, 80, 70), false);
+        }
+        for xx in x - 2..x + 3 {
+            px(xx, y, rgb(110, 90, 60), false);
+            px(xx, y + 6, rgb(110, 90, 60), false);
+            for yy in y + 1..y + 6 {
+                let centro = (xx - x).abs() <= 1 && (2..5).contains(&(yy - y));
+                px(xx, yy, if centro { rgb(255, 245, 210) } else { rgb(255, 214, 130) }, true);
+            }
+        }
+    }
+    (img, luce)
+}
 
 impl Egresso {
     pub(super) fn disegna(&mut self, fb: &mut Framebuffer, stats: &Stats) {
-        fb.clear(SFONDO);
+        fb.clear(rgb(0, 0, 0));
         self.luce.clear(0);
+        let scossa = if self.scossa > 0.0 { (((self.t * 50.0) as i32 % 3) - 1) * 2 } else { 0 };
+        let cam = self.cam.round() as i32 + scossa;
 
-        // Polvere che luccica piano.
-        for (i, &(x, y, b)) in self.polvere.iter().enumerate() {
-            let k = 0.6 + 0.4 * (self.t * 0.7 + i as f32 * 1.3).sin();
-            let b = (b as f32 * k) as u8;
-            fb.set_pixel(x, y, rgb(b, b, b.saturating_add(8)));
-        }
-
-        self.disegna_realta(fb);
-        self.disegna_vuoto(fb);
-        self.disegna_nomi(fb);
-        self.disegna_proposte(fb);
-        self.disegna_particelle(fb);
-        self.disegna_giocatore(fb);
+        self.disegna_stanza(fb, cam);
+        self.disegna_lanterna(fb, cam);
+        self.disegna_acqua(fb, cam);
+        self.disegna_correnti(fb, cam);
+        self.disegna_scritte(fb, cam);
+        self.disegna_particelle(fb, cam);
+        self.disegna_giocatore(fb, cam);
         self.disegna_sala(fb);
 
         self.glow.apply(&self.luce, fb, 2, 1.2);
@@ -58,174 +165,238 @@ impl Egresso {
         self.disegna_interfaccia(fb, stats);
     }
 
-    fn disegna_realta(&mut self, fb: &mut Framebuffer) {
-        let (w, h) = (LARGHEZZA as i32, ALTEZZA as i32);
-        for r in &self.mondo.rivelazioni {
-            let raggio = r.raggio();
-            if raggio <= 0.5 {
-                continue;
-            }
-            let x0 = ((r.centro.x - raggio) as i32).max(0);
-            let x1 = ((r.centro.x + raggio) as i32 + 1).min(w);
-            let y0 = ((r.centro.y - raggio) as i32).max(0);
-            let y1 = ((r.centro.y + raggio) as i32 + 1).min(h);
-            for y in y0..y1 {
-                for x in x0..x1 {
-                    let d = (Vec2::new(x as f32, y as f32) - r.centro).len();
-                    // Bordo "a dithering": la realtà affiora a puntini.
-                    let v = ((raggio - d) / 12.0).clamp(0.0, 1.0);
-                    if v <= BAYER[(y & 3) as usize][(x & 3) as usize] {
-                        continue;
-                    }
-                    let i = (y * w + x) as usize;
-                    let k = 0.85 + 0.35 * (1.0 - d / raggio).max(0.0);
-                    fb.pixel_mut()[i] = scala(self.realta[i], k);
-                    let l = self.realta_luce[i];
-                    if l != 0 {
-                        self.luce.pixel_mut()[i] = l;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Dove sotto i piedi non c'è niente che regga, il pulviscolo cade:
-    /// si vede dove si precipita.
-    fn disegna_vuoto(&mut self, fb: &mut Framebuffer) {
-        let g = self.giocatore.rect();
-        let piedi = ((g.bottom() + 1.0) / TILE as f32).floor() as i32;
-        let y0 = piedi * TILE;
-        let altezza = (ALTEZZA as i32 - y0).max(1);
-        let col = rgb(150, 140, 200);
-        for tx in 0..COLONNE {
-            if !self.mondo.colonna_vuota(tx, piedi) {
-                continue;
-            }
-            for k in 0..6 {
-                let h = hash01(tx, k, 17);
-                let vel = 30.0 + 40.0 * hash01(tx, k, 18);
-                let dy = ((self.t * vel + h * altezza as f32) % altezza as f32) as i32;
-                let x = tx * TILE + (hash01(tx, k, 19) * 7.0) as i32;
-                let y = y0 + dy;
-                // Più giù, più si spegne: il vuoto inghiotte.
-                let a = (1.0 - dy as f32 / altezza as f32) * 210.0;
-                fb.blend_pixel(x, y, col, a as u8);
-                fb.blend_pixel(x, y - 1, col, (a * 0.5) as u8);
-                fb.blend_pixel(x, y - 2, col, (a * 0.25) as u8);
-            }
-        }
-    }
-
-    fn disegna_nomi(&mut self, fb: &mut Framebuffer) {
-        for ty in 0..RIGHE {
-            for tx in 0..COLONNE {
-                let Some(c) = self.mondo.cella(tx, ty) else { continue };
-                let p = &self.mondo.percetti[c.percetto as usize];
-                // Appena affermata, la parola si accende di colpo.
-                let lampo = match self.lampo {
-                    Some((i, t)) if i == c.percetto as usize => t / 0.35,
-                    _ => 0.0,
-                };
-                // Il bordo superiore di ciò che regge: qui si può stare.
-                if c.natura.regge() && self.mondo.solido(tx, ty - 1).is_none() {
-                    let bordo = scala(c.voce.colore(), 0.5 + lampo);
-                    for dx in 0..TILE {
-                        fb.blend_pixel(tx * TILE + dx, ty * TILE, bordo, 70);
-                    }
-                }
-                // La certezza si vede: le parole marce sfarfallano.
-                let k = 0.45 + 0.55 * p.certezza + lampo;
-                if p.certezza < 0.45 && hash01(tx, ty, (self.t * 12.0) as u32) < 0.12 {
+    fn disegna_stanza(&mut self, fb: &mut Framebuffer, cam: i32) {
+        let lw = LARGHEZZA as i32;
+        let w = self.mondo.larg * TILE;
+        for y in 0..ALTEZZA_MONDO {
+            for x in 0..lw {
+                let wx = cam + x;
+                if !(0..w).contains(&wx) {
                     continue;
                 }
-                let (alpha, luce) = match c.natura {
-                    // Un nome che non regge è un fantasma di lettere.
-                    Natura::Vuota => (110, 0.18),
-                    _ => (255, 0.5),
-                };
-                let col = scala(c.voce.colore(), k);
-                let (x, y) = (tx * TILE + 1, ty * TILE + 1);
-                let inclina = c.voce == Voce::Memoria;
-                self.font.draw_char(fb, x, y, c.lettera, col, alpha, inclina);
-                self.font.draw_char(&mut self.luce, x, y, c.lettera, scala(col, luce), 255, inclina);
+                let i = (y * w + wx) as usize;
+                let o = (y * lw + x) as usize;
+                fb.pixel_mut()[o] = self.sfondo[i];
+                let l = self.sfondo_luce[i];
+                if l != 0 {
+                    self.luce.pixel_mut()[o] = l;
+                }
             }
         }
     }
 
-    fn disegna_proposte(&mut self, fb: &mut Framebuffer) {
-        let focus = self.focus;
-        for (pi, p) in self.mondo.percetti.iter().enumerate() {
-            let area = p.rect();
-            let cx = area.center().x as i32;
-            // Gli attributi: i sensi parlano per primi.
-            let alpha_attr = match p.fase {
-                Fase::Sentito(t) => (t / 0.5).min(1.0),
-                Fase::Proposto => 0.45,
-                _ => 0.0,
-            };
-            if alpha_attr > 0.0 {
-                for (k, a) in p.def.attributi.iter().enumerate() {
-                    let dy = (self.t * 1.3 + k as f32).sin() * 1.5;
-                    let y = area.y as i32 - 10 - 9 * (p.def.attributi.len() - 1 - k) as i32 + dy as i32;
-                    let x = dentro_schermo(cx - misura(a) / 2 + (k as i32 - 1) * 14, misura(a));
-                    self.font.draw_text_alpha(fb, x, y, a, ATTRIBUTO, (alpha_attr * 200.0) as u8);
+    fn centro_lanterna(&self) -> Vec2 {
+        let g = &self.giocatore;
+        Vec2::new(g.pos.x + if g.verso > 0.0 { 7.0 } else { -1.0 }, g.pos.y + 7.0)
+    }
+
+    fn raggio_lanterna(&self) -> f32 {
+        60.0 + self.foga * 26.0 + (self.t * 9.0).sin() * 1.5
+    }
+
+    /// Luce della sola lanterna del protagonista in un punto (0..~1.6).
+    fn luce_giocatore(&self, p: Vec2) -> f32 {
+        let r = self.raggio_lanterna();
+        (1.0 - (p - self.centro_lanterna()).len() / r).max(0.0).powf(1.2) * (1.0 + self.foga * 0.6)
+    }
+
+    /// Luce totale in un punto: lanterne fisse e la tua.
+    fn lume(&self, p: Vec2) -> f32 {
+        lanterne(&self.mondo).map(|c| luce_lanterna(p, c)).sum::<f32>() + self.luce_giocatore(p)
+    }
+
+    fn disegna_lanterna(&mut self, fb: &mut Framebuffer, cam: i32) {
+        let c = self.centro_lanterna();
+        let r = self.raggio_lanterna();
+        let (cx, cy) = (c.x as i32 - cam, c.y as i32);
+        let ri = r as i32 + 1;
+        for y in (cy - ri).max(0)..(cy + ri).min(ALTEZZA_MONDO) {
+            for x in (cx - ri).max(0)..(cx + ri).min(LARGHEZZA as i32) {
+                let k = self.luce_giocatore(Vec2::new((x + cam) as f32, y as f32));
+                if k <= 0.0 {
+                    continue;
                 }
+                let i = (y * LARGHEZZA as i32 + x) as usize;
+                let p = fb.pixel_mut()[i];
+                let caldo = scala(p, 1.0 + 1.7 * k);
+                fb.pixel_mut()[i] = crate::engine::framebuffer::add(caldo, rgb((k * 22.0) as u8, (k * 12.0) as u8, 0));
             }
-            if p.fase != Fase::Proposto {
-                continue;
-            }
-            // Le proposte: tre parole che si contendono lo stesso spazio.
-            for (j, pr) in p.def.proposte.iter().enumerate() {
-                let in_primo_piano = j == p.focus;
-                let alpha: u8 = if in_primo_piano { 255 } else { 120 };
-                let col = pr.voce.colore();
-                for k in 0..pr.celle {
-                    let lettera = p.lettera(j, k, 0);
-                    let (tx, ty) = pr.cella(k);
-                    let fase = self.t * 11.0 + k as f32 * 1.7 + j as f32 * 2.3;
-                    let tr = pr.voce.tremito() * if in_primo_piano { 1.0 } else { 1.6 };
-                    let (dx, dy) = ((fase.sin() * tr).round() as i32, ((fase * 1.31).cos() * tr).round() as i32);
-                    let (x, y) = (tx * TILE + 1 + dx, ty * TILE + 1 + dy);
-                    let inclina = pr.voce == Voce::Memoria;
-                    // Una proposta non è ancora reale: lettere retinate che sfrigolano.
-                    let sfrigolio = (self.t * 8.0) as i32 + k;
-                    self.font.draw_char_retinato(fb, x, y, lettera, col, alpha, inclina, sfrigolio);
-                    if in_primo_piano {
-                        self.font.draw_char_retinato(&mut self.luce, x, y, lettera, scala(col, 0.35), 255, inclina, sfrigolio);
+        }
+    }
+
+    fn disegna_acqua(&mut self, fb: &mut Framebuffer, cam: i32) {
+        let tx0 = cam.div_euclid(TILE);
+        let tx1 = (cam + LARGHEZZA as i32).div_euclid(TILE);
+        for ty in 0..RIGHE {
+            for tx in tx0..=tx1 {
+                if self.mondo.cella(tx, ty) != b'~' {
+                    continue;
+                }
+                let cima = !self.mondo.acqua(tx, ty - 1);
+                let mut prof = 0;
+                while self.mondo.acqua(tx, ty - prof - 1) {
+                    prof += 1;
+                }
+                let alpha = (120 + prof * 14).min(210) as u8;
+                for py in 0..TILE {
+                    for px in 0..TILE {
+                        let wx = tx * TILE + px;
+                        let (x, y) = (wx - cam, ty * TILE + py);
+                        if cima {
+                            let onda = (self.t * 2.2 + wx as f32 * 0.17).sin() * 1.2 + (self.t * 1.3 + wx as f32 * 0.05).sin() * 0.8;
+                            let pelo = 1.5 + onda;
+                            if (py as f32) < pelo {
+                                continue;
+                            }
+                            if (py as f32) < pelo + 1.0 {
+                                fb.blend_pixel(x, y, rgb(150, 200, 235), 170);
+                                self.luce.blend_pixel(x, y, rgb(20, 40, 60), 255);
+                                continue;
+                            }
+                        }
+                        fb.blend_pixel(x, y, rgb(10, 30, 60), alpha);
                     }
                 }
             }
-            // Il nome della voce in primo piano, se è a fuoco.
-            if focus == Some(pi) {
-                let voce = p.def.proposte[p.focus].voce;
-                let y = area.y as i32 - 10 - 9 * p.def.attributi.len() as i32;
-                let testo = voce.nome();
-                let cx = dentro_schermo(cx - misura(testo) / 2 - 10, misura(testo) + 20) + misura(testo) / 2 + 10;
-                self.font.draw_centered(fb, cx, y, testo, voce.colore(), 220);
-                // Le frecce dicono "ci sono altre voci": solo se è vero e Q è sbloccato.
-                if p.def.proposte.len() > 1 && self.sbloccati & comando::VOCE != 0 {
-                    let mezza = misura(testo) / 2;
-                    self.font.draw_text_alpha(fb, cx - mezza - 10, y, "<", voce.colore(), 120);
-                    self.font.draw_text_alpha(fb, cx + mezza + 5, y, ">", voce.colore(), 120);
+        }
+    }
+
+    /// Le correnti si vedono: scie che scorrono nella loro direzione.
+    fn disegna_correnti(&mut self, fb: &mut Framebuffer, cam: i32) {
+        for d in self.mondo.stanza.correnti {
+            let forza = if mondo::attiva(d, self.t) { 1.0 } else { mondo::preavviso(d, self.t) * 0.5 };
+            if forza <= 0.0 {
+                continue;
+            }
+            let a = self.mondo.area(d);
+            let (vx, vy) = d.vel;
+            let (col, alpha) = match d.fluido {
+                Fluido::Acqua => (rgb(120, 180, 225), 110.0),
+                Fluido::Aria => (rgb(215, 220, 240), 160.0),
+            };
+            let orizzontale = vx != 0.0;
+            // Una corsia ogni riga (o colonna) di tile, qualche scia per corsia.
+            let (corsie, lungo) = if orizzontale { (a.h as i32 / TILE, a.w) } else { (a.w as i32 / TILE, a.h) };
+            let v = if orizzontale { vx } else { vy };
+            let per_corsia = (lungo / 24.0).ceil() as i32;
+            for c in 0..corsie {
+                for k in 0..per_corsia {
+                    let h = hash01(k, c, 41);
+                    let vel = v * (0.6 + 0.6 * hash01(k, c, 42));
+                    let s = (h * lungo + self.t * vel).rem_euclid(lungo);
+                    let trasv = (c * TILE) as f32 + hash01(k, c, 43) * 7.0;
+                    let p = if orizzontale { Vec2::new(a.x + s, a.y + trasv) } else { Vec2::new(a.x + trasv, a.y + s) };
+                    let (tx, ty) = Mondo::tile(p);
+                    if self.mondo.riparato(tx, ty, d) || self.mondo.solido(tx, ty) {
+                        continue;
+                    }
+                    let dir = if v > 0.0 { 1.0 } else { -1.0 };
+                    const SCIA: i32 = 7;
+                    for q in 0..SCIA {
+                        let dietro = q as f32 * dir;
+                        let pp = if orizzontale { Vec2::new(p.x - dietro, p.y) } else { Vec2::new(p.x, p.y - dietro) };
+                        let al = (alpha * forza * (1.0 - q as f32 / SCIA as f32)) as u8;
+                        fb.blend_pixel(pp.x as i32 - cam, pp.y as i32, col, al);
+                    }
                 }
             }
         }
-        // Angoli attorno a ciò che è a fuoco.
-        if let Some(i) = focus {
-            let r = self.mondo.percetti[i].rect().expand(2.0);
-            let col = rgb(150, 150, 170);
-            let (x0, y0, x1, y1) = (r.x as i32, r.y as i32, r.right() as i32 - 1, r.bottom() as i32 - 1);
-            for (x, y, sx, sy) in [(x0, y0, 1, 1), (x1, y0, -1, 1), (x0, y1, 1, -1), (x1, y1, -1, -1)] {
-                for d in 0..3 {
-                    fb.blend_pixel(x + d * sx, y, col, 150);
-                    fb.blend_pixel(x, y + d * sy, col, 150);
+    }
+
+    fn disegna_scritte(&mut self, fb: &mut Framebuffer, cam: i32) {
+        for s in self.mondo.stanza.scritte {
+            let r = rect_scritta(&self.mondo, s);
+            let c = r.center();
+            if r.right() < cam as f32 || r.x > (cam + LARGHEZZA as i32) as f32 {
+                continue;
+            }
+            let (x, y) = (r.x as i32 - cam, r.y as i32);
+            match s.inchiostro {
+                Inchiostro::Ottone => {
+                    // Una targa: si legge con qualunque luce.
+                    let l = self.lume(c).min(1.0);
+                    let lastra = scala(rgb(150, 112, 48), 0.25 + 0.75 * l);
+                    fb.fill_rect(x - 2, y - 2, r.w as i32 + 4, r.h as i32 + 2, lastra);
+                    let bordo = scala(rgb(214, 170, 90), 0.25 + 0.75 * l);
+                    for dx in -2..r.w as i32 + 2 {
+                        fb.set_pixel(x + dx, y - 2, bordo);
+                        fb.set_pixel(x + dx, y + r.h as i32 - 1, scala(bordo, 0.5));
+                    }
+                    for (i, riga) in s.righe.iter().enumerate() {
+                        self.font.draw_text(fb, x, y + i as i32 * INTERLINEA, riga, scala(rgb(52, 34, 14), 0.4 + 0.6 * l));
+                    }
+                }
+                Inchiostro::Gesso => {
+                    let a = (self.lume(c) * 1.3).clamp(0.0, 1.0);
+                    for (i, riga) in s.righe.iter().enumerate() {
+                        self.font.draw_text_alpha(fb, x, y + i as i32 * INTERLINEA, riga, rgb(228, 222, 206), (a * 210.0) as u8);
+                    }
+                }
+                Inchiostro::Carbone => {
+                    // Il carbone si legge solo con la tua lanterna, da vicino.
+                    let a = (self.luce_giocatore(c) * 2.2).clamp(0.0, 1.0);
+                    for (i, riga) in s.righe.iter().enumerate() {
+                        self.font.draw_text_alpha(fb, x, y + i as i32 * INTERLINEA, riga, rgb(160, 156, 166), (a * 230.0) as u8);
+                    }
                 }
             }
         }
+    }
+
+    fn disegna_particelle(&mut self, fb: &mut Framebuffer, cam: i32) {
+        for p in &self.particelle.v {
+            let k = (p.vita / p.durata).clamp(0.0, 1.0);
+            let (x, y) = (p.pos.x as i32 - cam, p.pos.y as i32);
+            let c = scala(p.colore, k);
+            fb.add_pixel(x, y, c);
+            self.luce.add_pixel(x, y, scala(c, 0.6));
+        }
+    }
+
+    fn disegna_giocatore(&mut self, fb: &mut Framebuffer, cam: i32) {
+        let g = &self.giocatore;
+        let (x, y) = (g.pos.x.round() as i32 - cam, g.pos.y.round() as i32);
+        let corpo = rgb(232, 230, 240);
+        let ombra = rgb(150, 148, 170);
+        // Testa, con un occhio.
+        fb.fill_rect(x + 1, y, 4, 4, corpo);
+        fb.set_pixel(x + if g.verso > 0.0 { 3 } else { 2 }, y + 1, rgb(30, 26, 40));
+        // Busto.
+        fb.fill_rect(x, y + 4, 6, 5, corpo);
+        fb.fill_rect(x + if g.verso > 0.0 { 0 } else { 4 }, y + 5, 2, 3, ombra);
+        // Gambe: alternate camminando, raccolte in aria, molli in acqua.
+        let fase = ((g.passo / 4.0) as i32) & 1;
+        if g.in_acqua {
+            let f = ((self.t * if g.rilassato { 2.0 } else { 9.0 }) as i32) & 1;
+            fb.fill_rect(x + f, y + 9, 2, 3, corpo);
+            fb.fill_rect(x + 3 + f, y + 9, 2, 2, corpo);
+        } else if !g.a_terra {
+            fb.fill_rect(x + 1, y + 9, 2, 2, corpo);
+            fb.fill_rect(x + 3, y + 9, 2, 3, corpo);
+        } else if g.vel.x.abs() > 5.0 && fase == 1 {
+            fb.fill_rect(x, y + 9, 2, 3, corpo);
+            fb.fill_rect(x + 4, y + 9, 2, 2, corpo);
+        } else {
+            fb.fill_rect(x + 1, y + 9, 2, 3, corpo);
+            fb.fill_rect(x + 3, y + 9, 2, 3, corpo);
+        }
+        // La sciarpa rossa, che svolazza dietro.
+        let rosso = rgb(220, 40, 52);
+        fb.fill_rect(x, y + 4, 6, 1, rosso);
+        let dietro = if g.verso > 0.0 { x - 1 } else { x + 6 };
+        let sv = ((self.t * 9.0).sin() * 1.2).round() as i32;
+        fb.set_pixel(dietro, y + 4 + sv.max(0), rosso);
+        fb.set_pixel(dietro - g.verso as i32, y + 5 + sv, rosso);
+        // La lanterna in mano.
+        let l = self.centro_lanterna();
+        let (lx, ly) = (l.x as i32 - cam, l.y as i32);
+        let fiamma = mix(rgb(255, 214, 130), rgb(255, 120, 60), (self.foga * 255.0) as u8);
+        fb.fill_rect(lx - 1, ly - 1, 2, 3, fiamma);
+        self.luce.fill_rect(lx - 1, ly - 1, 2, 3, scala(rgb(255, 190, 100), 0.6 + self.foga));
     }
 
     /// La voce della Sala: al centro, lettera per lettera, con un respiro
-    /// lento e un alone (viene disegnata anche nel buffer della luce).
+    /// lento e un alone.
     fn disegna_sala(&mut self, fb: &mut Framebuffer) {
         let Some((testo, n, alpha)) = self.sala.visibile() else { return };
         if self.scena != Scena::Gioco {
@@ -238,222 +409,65 @@ impl Egresso {
         let a = (alpha * 255.0) as u8;
         for (i, c) in testo.chars().take(n).enumerate() {
             let onda = ((self.t * 1.8 + i as f32 * 0.45).sin() * 1.2).round() as i32;
-            let (x, y) = (x0 + i as i32 * PASSO, 62 + onda);
+            let (x, y) = (x0 + i as i32 * PASSO, 50 + onda);
+            // Un'ombra sotto, per leggerla anche sopra le scritte dei muri.
+            self.font.draw_char(fb, x + 1, y + 1, c, rgb(0, 0, 0), a, false);
             self.font.draw_char(fb, x, y, c, colore, a, false);
             self.font.draw_char(&mut self.luce, x, y, c, scala(colore, 0.45 * alpha), 255, false);
         }
-    }
-
-    fn disegna_particelle(&mut self, fb: &mut Framebuffer) {
-        for p in &self.particelle.v {
-            let k = (p.vita / p.durata).clamp(0.0, 1.0);
-            let (x, y) = (p.pos.x as i32, p.pos.y as i32);
-            if p.lettera == ' ' {
-                let c = scala(p.colore, k);
-                fb.add_pixel(x, y, c);
-                self.luce.add_pixel(x, y, scala(c, 0.8));
-            } else {
-                // Le lettere cadute restano a terra e si spengono piano.
-                let alpha = (k.min(0.5) * 2.0 * 200.0) as u8;
-                let c = scala(p.colore, 0.75);
-                self.font.draw_char(fb, x, y, p.lettera, c, alpha, p.inclina);
-                self.font.draw_char(&mut self.luce, x, y, p.lettera, scala(c, 0.15 * k), 255, p.inclina);
-            }
-        }
-    }
-
-    fn disegna_giocatore(&mut self, fb: &mut Framebuffer) {
-        let g = &self.giocatore;
-        let (x, y) = (g.pos.x.round() as i32, g.pos.y.round() as i32);
-        let corpo = rgb(232, 230, 240);
-        let ombra = rgb(150, 148, 170);
-        // Testa.
-        fb.fill_rect(x + 1, y, 4, 4, corpo);
-        // Busto.
-        fb.fill_rect(x, y + 4, 6, 5, corpo);
-        fb.fill_rect(x + if g.verso > 0.0 { 0 } else { 4 }, y + 5, 2, 3, ombra);
-        // Gambe: alternate camminando.
-        let fase = ((g.passo / 4.0) as i32) & 1;
-        if !g.a_terra {
-            fb.fill_rect(x + 1, y + 9, 2, 2, corpo);
-            fb.fill_rect(x + 3, y + 9, 2, 3, corpo);
-        } else if g.vel.x.abs() > 5.0 && fase == 1 {
-            fb.fill_rect(x, y + 9, 2, 3, corpo);
-            fb.fill_rect(x + 4, y + 9, 2, 2, corpo);
-        } else {
-            fb.fill_rect(x + 1, y + 9, 2, 3, corpo);
-            fb.fill_rect(x + 3, y + 9, 2, 3, corpo);
-        }
-        // La benda rossa, con il nodo che svolazza dietro.
-        let benda = rgb(220, 40, 52);
-        fb.fill_rect(x, y + 1, 6, 2, benda);
-        let dietro = if g.verso > 0.0 { x - 1 } else { x + 6 };
-        let sv = ((self.t * 9.0).sin() * 1.2).round() as i32;
-        fb.set_pixel(dietro, y + 1 + sv.max(0), benda);
-        fb.set_pixel(dietro - g.verso as i32, y + 2 + sv, benda);
-        self.luce.fill_rect(x, y + 1, 6, 2, rgb(40, 6, 8));
     }
 
     fn disegna_interfaccia(&mut self, fb: &mut Framebuffer, stats: &Stats) {
         let w = LARGHEZZA as i32;
 
         // Titolo iniziale.
-        if self.t < 3.0 {
-            let a = (if self.t < 1.8 { 1.0 } else { (3.0 - self.t) / 1.2 }).clamp(0.0, 1.0);
-            testo_grande(&self.font, fb, w / 2, 38, "EGRESSO", rgb(240, 232, 214), (a * 255.0) as u8, 3);
-            self.font.draw_centered(fb, w / 2, 66, "IL MONDO E' CIO' CHE DICI CHE SIA.", rgb(150, 140, 190), (a * 200.0) as u8);
+        if self.t < 3.5 {
+            let a = (if self.t < 2.3 { 1.0 } else { (3.5 - self.t) / 1.2 }).clamp(0.0, 1.0);
+            testo_grande(&self.font, fb, w / 2, 20, "EGRESSO", rgb(240, 232, 214), (a * 255.0) as u8, 3);
+            self.font.draw_centered(fb, w / 2, 46, "UNA SALA CHE TI VUOLE BENE.", rgb(150, 140, 190), (a * 200.0) as u8);
         }
 
-        // Il nome della stanza, entrando (non sopra il titolo iniziale).
-        if self.t > 3.5 && self.t_stanza < 2.5 {
-            let a = (if self.t_stanza < 1.5 { 1.0 } else { (2.5 - self.t_stanza) / 1.0 }).clamp(0.0, 1.0);
-            testo_grande(&self.font, fb, w / 2, 30, self.mondo.stanza.nome, rgb(240, 232, 214), (a * 230.0) as u8, 2);
+        // Il nome della stanza, entrando.
+        if self.t > 4.0 && self.t_stanza < 2.5 {
+            let a = (if self.t_stanza < 1.5 { 1.0 } else { 2.5 - self.t_stanza }).clamp(0.0, 1.0);
+            testo_grande(&self.font, fb, w / 2, 22, self.mondo.stanza.nome, rgb(240, 232, 214), (a * 230.0) as u8, 2);
         }
 
-        self.disegna_suggerimento(fb);
-
-        self.disegna_nuovo(fb);
-
-        // La voce che commenta.
-        if let Some(m) = &self.messaggio {
-            let a = if m.t < 2.0 { 1.0 } else { (2.5 - m.t) / 0.5 };
-            let tr = m.voce.tremito();
-            let dx = ((self.t * 25.0).sin() * tr).round() as i32;
-            self.font.draw_centered(fb, w / 2 + dx, 46, m.testo, m.voce.colore(), (a.clamp(0.0, 1.0) * 255.0) as u8);
-        }
-
-        match self.scena {
-            Scena::Atrio(t) => {
-                let a = (t / 0.8).min(1.0);
-                for p in fb.pixel_mut() {
-                    *p = mix(*p, rgb(0, 0, 0), (a * 255.0) as u8);
+        if let Scena::Uscito(t) = self.scena {
+            let a = (t / 1.5).min(1.0);
+            for p in fb.pixel_mut() {
+                *p = mix(*p, rgb(255, 238, 205), (a * 255.0) as u8);
+            }
+            if t > 1.0 {
+                let b = ((t - 1.0) / 1.0).min(1.0);
+                let (testo, testo2) =
+                    if self.ha_capito { ("L'ACQUA SAPEVA DOVE ANDARE.", "") } else { ("SEI USCITO.", "NESSUNO TE L'AVEVA DETTO.") };
+                testo_grande(&self.font, fb, w / 2, 50, "EGRESSO", rgb(60, 44, 40), (b * 255.0) as u8, 2);
+                self.font.draw_centered(fb, w / 2, 80, testo, rgb(90, 64, 56), (b * 255.0) as u8);
+                self.font.draw_centered(fb, w / 2, 92, testo2, rgb(90, 64, 56), (b * 255.0) as u8);
+                if t > 1.8 {
+                    let mut buf = [0u8; 64];
+                    let passi = (self.sforzo_totale * 6.0).round() as i32;
+                    let r = scrivi(&mut buf, format_args!("LA SALA SI ERA ALLUNGATA DI {passi} PASSI."));
+                    self.font.draw_centered(fb, w / 2, 112, r, rgb(150, 120, 100), 220);
                 }
-                if t > 0.6 {
-                    let b = ((t - 0.6) / 0.6).min(1.0);
-                    self.font.draw_centered(fb, w / 2, 80, "L'ATRIO. DI NUOVO.", rgb(240, 232, 214), (b * 255.0) as u8);
-                    if self.ritorni_all_atrio > 1 {
-                        self.font.draw_centered(fb, w / 2, 94, "LA PORTA C'ERA. L'HAI DETTO TU.", rgb(150, 140, 190), (b * 200.0) as u8);
-                    }
+                if t > 2.5 {
+                    self.font.draw_centered(fb, w / 2, 150, "INVIO PER RICOMINCIARE", rgb(150, 120, 100), 200);
                 }
             }
-            Scena::Uscito(t) => {
-                let a = (t / 1.5).min(1.0);
-                for p in fb.pixel_mut() {
-                    *p = mix(*p, rgb(255, 238, 205), (a * 255.0) as u8);
-                }
-                if t > 1.0 {
-                    let b = ((t - 1.0) / 1.0).min(1.0);
-                    testo_grande(&self.font, fb, w / 2, 56, "EGRESSO", rgb(60, 44, 40), (b * 255.0) as u8, 2);
-                    self.font.draw_centered(fb, w / 2, 84, "NON SERVIVA UN NOME.", rgb(90, 64, 56), (b * 255.0) as u8);
-                    if t > 2.0 {
-                        self.font.draw_centered(fb, w / 2, 150, "INVIO PER RICOMINCIARE", rgb(150, 120, 100), 200);
-                    }
-                }
-            }
-            Scena::Gioco => {}
         }
 
         if self.debug {
             let mut buf = [0u8; 64];
-            let r1 = scrivi(&mut buf, format_args!("FPS {:.0}", stats.fps));
+            let r1 = scrivi(&mut buf, format_args!("FPS {:.0} UPD {:.2} REN {:.2}", stats.fps, stats.ms_update, stats.ms_render));
             self.font.draw_text(fb, 2, 2, r1, rgb(120, 255, 120));
-            let r2 = scrivi(&mut buf, format_args!("UPD {:.2} REN {:.2}", stats.ms_update, stats.ms_render));
+            let m = self.moduli;
+            let r2 = scrivi(&mut buf, format_args!("MODULI {:.1} {:.1} {:.1} FOGA {:.2}", m[0], m[1], m[2], self.foga));
             self.font.draw_text(fb, 2, 11, r2, rgb(120, 255, 120));
-            let r3 = scrivi(&mut buf, format_args!("PART {} RIV {}", self.particelle.v.len(), self.mondo.rivelazioni.len()));
+            let r3 = scrivi(&mut buf, format_args!("PART {} LETTE {:b}", self.particelle.v.len(), self.lette[self.stanza]));
             self.font.draw_text(fb, 2, 20, r3, rgb(120, 255, 120));
         }
     }
-}
-
-/// Sposta una x perché un testo largo `larg` resti dentro lo schermo.
-fn dentro_schermo(x: i32, larg: i32) -> i32 {
-    x.clamp(2, LARGHEZZA as i32 - 2 - larg)
-}
-
-impl Egresso {
-    /// Sopra il protagonista, una riga per ogni azione possibile adesso su
-    /// ciò che è a fuoco: un tasto disegnato e cosa fa, con la parola in
-    /// gioco ("[E] CHIAMALO PONTE"). Solo comandi già sbloccati; ogni riga
-    /// sparisce dopo che l'azione è stata fatta due volte.
-    fn disegna_suggerimento(&mut self, fb: &mut Framebuffer) {
-        if self.scena != Scena::Gioco || self.t < 2.5 {
-            return;
-        }
-        let Some(i) = self.focus else { return };
-        let p = &self.mondo.percetti[i];
-        let ha = |c: u8| self.sbloccati & c != 0;
-        let proposto = p.fase == Fase::Proposto;
-        let mio = p.fase == Fase::Affermato && p.def.iniziale.is_none();
-        let g = self.giocatore.rect();
-        let cx = g.center().x as i32;
-        let mut y = (g.y as i32 - 15).max(2);
-        let neutro = rgb(214, 206, 240);
-
-        if proposto && ha(comando::DI) && self.usati[0] < 2 {
-            let pr = &p.def.proposte[p.focus];
-            let parola = pr.lemma.stati[0].testo.trim();
-            let mut buf = [0u8; 64];
-            let testo = scrivi(&mut buf, format_args!("CHIAMALO {parola}"));
-            riga_comando(&self.font, fb, cx, y, &["E"], testo, pr.voce.colore());
-            y -= 13;
-        }
-        if proposto && p.def.proposte.len() > 1 && ha(comando::VOCE) && self.usati[1] < 2 {
-            riga_comando(&self.font, fb, cx, y, &["Q"], "UN'ALTRA VOCE", Voce::Memoria.colore());
-            y -= 13;
-        }
-        if (proposto || mio) && ha(comando::LASCIA) && self.usati[2] < 2 {
-            riga_comando(&self.font, fb, cx, y, &["R"], "LASCIA ANDARE", neutro);
-        }
-    }
-
-    /// In basso, per qualche secondo: il comando appena sbloccato.
-    fn disegna_nuovo(&mut self, fb: &mut Framebuffer) {
-        let Some((c, t)) = self.nuovo else { return };
-        let a = (t / 0.3).min(1.0).min((4.0 - t) / 0.6).clamp(0.0, 1.0);
-        if a <= 0.0 {
-            return;
-        }
-        let (tasti, testo): (&[&str], &str) = if c & comando::MUOVI != 0 {
-            (&["<", ">"], "CAMMINA")
-        } else if c & comando::SALTA != 0 {
-            (&["SPAZIO"], "SALTA")
-        } else if c & comando::DI != 0 {
-            (&["E"], "DAI UN NOME")
-        } else if c & comando::VOCE != 0 {
-            (&["Q"], "ASCOLTA UN'ALTRA VOCE")
-        } else {
-            (&["R"], "LASCIA ANDARE")
-        };
-        let w = LARGHEZZA as i32;
-        let col = scala(rgb(240, 232, 214), a);
-        self.font.draw_centered(fb, w / 2, 152, "NUOVO", scala(rgb(150, 140, 200), a), 255);
-        riga_comando(&self.font, fb, w / 2, 164, tasti, testo, col);
-    }
-}
-
-/// Disegna dei tasti (riquadri con un'etichetta) seguiti da un testo, il
-/// tutto centrato su `cx`, su un fondo scuro per leggerlo sopra le lettere.
-fn riga_comando(font: &Font, fb: &mut Framebuffer, cx: i32, y: i32, tasti: &[&str], testo: &str, colore: u32) {
-    let larg_tasti: i32 = tasti.iter().map(|t| misura(t) + 6).sum();
-    let larg = larg_tasti + misura(testo);
-    let mut x = dentro_schermo(cx - larg / 2, larg);
-    fb.fill_rect(x - 3, y - 3, larg + 6, 13, SFONDO);
-    for t in tasti {
-        let wt = misura(t) + 4;
-        // Il riquadro del tasto: come il pulsante sul telefono.
-        fb.fill_rect(x, y - 2, wt, 11, scala(colore, 0.18));
-        for dx in 0..wt {
-            fb.set_pixel(x + dx, y - 2, colore);
-            fb.set_pixel(x + dx, y + 8, colore);
-        }
-        for dy in -2..9 {
-            fb.set_pixel(x, y + dy, colore);
-            fb.set_pixel(x + wt - 1, y + dy, colore);
-        }
-        font.draw_text(fb, x + 2, y, t, colore);
-        x += wt + 2;
-    }
-    font.draw_text(fb, x + 2, y, testo, colore);
 }
 
 /// Formatta in un buffer sullo stack: niente `String`, niente allocazioni.
@@ -485,99 +499,4 @@ fn testo_grande(font: &Font, fb: &mut Framebuffer, cx: i32, y: i32, testo: &str,
         }
         x += AVANZAMENTO * s;
     }
-}
-
-/// Dipinge una volta sola il dungeon vero (pixel art procedurale, già
-/// illuminata dalle lanterne). Restituisce l'immagine e la sua parte emissiva.
-pub fn genera_realta(mondo: &Mondo) -> (Vec<u32>, Vec<u32>) {
-    let (w, h) = (LARGHEZZA as i32, ALTEZZA as i32);
-    let mut img = vec![0u32; (w * h) as usize];
-    let mut luce = vec![0u32; (w * h) as usize];
-    let t = TILE;
-    let varco_centro = Vec2::new((COLONNE * t) as f32, (16 * t) as f32);
-
-    for y in 0..h {
-        for x in 0..w {
-            let (tx, ty) = (x / t, y / t);
-            let reale = mondo.reale(tx, ty);
-            let sopra_libero = !mondo.reale(tx, ty - 1).regge();
-            let n = hash01(x, y, 7) * 0.12 - 0.06;
-            let (mut r, mut g, mut b): (f32, f32, f32) = match reale {
-                Reale::Vuoto => {
-                    // Il muro di fondo: mattoni grandi e scuri.
-                    let fila = y / 8;
-                    let ox = if fila % 2 == 0 { 0 } else { 8 };
-                    let mattone = hash01((x + ox) / 16, fila, 3);
-                    let malta = (x + ox) % 16 == 0 || y % 8 == 0;
-                    let k = if malta { 0.55 } else { 0.8 + 0.35 * mattone };
-                    (34.0 * k, 28.0 * k, 46.0 * k)
-                }
-                Reale::Roccia => {
-                    let fila = y / 4;
-                    let ox = if fila % 2 == 0 { 0 } else { 4 };
-                    let blocco = hash01((x + ox) / 8, fila, 11);
-                    let malta = (x + ox) % 8 == 0 || y % 4 == 0;
-                    let mut k = if malta { 0.6 } else { 0.8 + 0.4 * blocco };
-                    if sopra_libero && y % t == 0 {
-                        k = 1.5;
-                    }
-                    (70.0 * k, 60.0 * k, 88.0 * k)
-                }
-                Reale::Gradino => {
-                    let malta = x % 16 == 0;
-                    let k = if y % t == 0 {
-                        1.5
-                    } else if malta {
-                        0.7
-                    } else {
-                        1.0
-                    };
-                    (92.0 * k, 82.0 * k, 104.0 * k)
-                }
-                Reale::Varco => {
-                    let v = (y % (t * 2)) as f32 / (t * 2) as f32;
-                    let c = (255.0, 240.0 - 35.0 * v, 200.0 - 50.0 * v);
-                    luce[(y * w + x) as usize] = rgb(200, 170, 120);
-                    c
-                }
-            };
-            // Muschio sulle superfici libere.
-            if matches!(reale, Reale::Roccia | Reale::Gradino) && sopra_libero && y % t < 2 && hash01(x, y, 5) < 0.45 {
-                let m = hash01(x, y, 6);
-                (r, g, b) = if m < 0.6 { (60.0, 118.0, 62.0) } else { (112.0, 170.0, 84.0) };
-            }
-            if reale != Reale::Varco {
-                // Luce delle lanterne e del varco.
-                let p = Vec2::new(x as f32 + 0.5, y as f32 + 0.5);
-                let mut l = 0.32;
-                for &(lx, ly) in mondo.stanza.lanterne {
-                    let c = Vec2::new((lx * t + 4) as f32, (ly * t + 3) as f32);
-                    l += (1.0 - (p - c).len() / 100.0).max(0.0).powf(1.5) * 1.3;
-                }
-                let lv = (1.0 - (p - varco_centro).len() / 130.0).max(0.0).powf(1.4) * 1.2;
-                r = r * (l * 1.12 + lv * 1.3) + 255.0 * n;
-                g = g * (l + lv * 1.1) + 255.0 * n;
-                b = b * (l * 0.82 + lv * 0.8) + 255.0 * n;
-            }
-            img[(y * w + x) as usize] = rgb(r.clamp(0.0, 255.0) as u8, g.clamp(0.0, 255.0) as u8, b.clamp(0.0, 255.0) as u8);
-        }
-    }
-
-    // Le lanterne: catena e corpo luminoso.
-    let mut fb = Framebuffer::new(LARGHEZZA, ALTEZZA);
-    fb.pixel_mut().copy_from_slice(&img);
-    for &(lx, ly) in mondo.stanza.lanterne {
-        let (x, y) = (lx * t + 4, ly * t);
-        fb.fill_rect(x, y - 20, 1, 20, rgb(90, 80, 70));
-        fb.fill_rect(x - 2, y, 5, 1, rgb(110, 90, 60));
-        fb.fill_rect(x - 2, y + 1, 5, 5, rgb(255, 214, 130));
-        fb.fill_rect(x - 1, y + 2, 3, 3, rgb(255, 245, 210));
-        fb.fill_rect(x - 2, y + 6, 5, 1, rgb(110, 90, 60));
-        for yy in y + 1..y + 6 {
-            for xx in x - 2..x + 3 {
-                luce[(yy * w + xx) as usize] = rgb(255, 190, 100);
-            }
-        }
-    }
-    (fb.pixel().to_vec(), luce)
 }

@@ -11,6 +11,7 @@
 //!   --every N          salva un frame ogni N
 //!   --out CARTELLA     dove salvare (default "shots")
 //!   --trace            stampa lo stato a ogni frame
+//!   --stanza N         comincia nella stanza N (0 Riva, 1 Atrio, 2 Galleria)
 
 use egresso::engine::app::{parse_script, run_headless};
 use egresso::engine::window::run_window;
@@ -36,6 +37,9 @@ fn main() {
     let script = parse_script(&testo).unwrap_or_else(|e| panic!("script non valido: {e}"));
 
     let mut gioco = Egresso::new();
+    if let Some(n) = valore("--stanza").and_then(|v| v.parse().ok()) {
+        gioco.entra(n);
+    }
     let traccia = args.iter().any(|a| a == "--trace");
     run_headless(&mut gioco, frames, &script, &scatti, ogni, &cartella, traccia).expect("errore salvando gli screenshot");
     println!("ok: {frames} frame simulati, screenshot in {cartella}/");
