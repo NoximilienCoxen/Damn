@@ -94,6 +94,15 @@ Correzioni, tutte nel segno del "mostrare, non spiegare":
 
 Lezione di design: una regola forte va insegnata con una stanza che contiene *solo* quella regola. Poi si aggiungono le complicazioni.
 
+## La Sala, la voce del dungeon (`sala.rs`)
+Una quarta voce al centro dello schermo. Tecnicamente è una piccola **coda di battute**:
+- ogni battuta è una variante di un `enum`, e un array di `bool` ricorda quelle già dette (una volta sola per partita);
+- la coda ha 3 posti fissi (`[Option<(Battuta, f32)>; 3]`): niente allocazioni, e se è piena la battuta si perde;
+- la battuta viene scritta a 20 caratteri al secondo, resta, poi svanisce. Se qualcuno aspetta, la pausa si accorcia;
+- una battuta rimasta in coda più di 4,5 secondi **scade** e torna disponibile: così non arriva mai fuori contesto (il primo test aveva mostrato "LO CHIAMI PONTE." comparire nella stanza dopo).
+
+Il gioco la fa parlare con una riga sola (`self.sala.di(Battuta::PrimoNome)`) nei punti giusti, compreso un contatore di secondi "fermo" per la battuta che premia chi non fa niente.
+
 ## Cosa manca (prossimi passi)
 - Luce con ombre proiettate dalle lettere sulle lettere.
 - Lettere come corpi rigidi: che rotolino e si ammucchino davvero.

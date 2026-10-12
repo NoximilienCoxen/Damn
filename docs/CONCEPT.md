@@ -50,6 +50,14 @@ Dagli attributi la mente prova a indovinare un **nome**. Lo propongono tre voci 
 - **Affermare** una parola: diventa la realtà. Diventa solida, utilizzabile e illuminata.
 - **Lasciarla andare**: la parola si scioglie (vedi sotto).
 
+### La Sala: la voce del dungeon
+Oltre alle tre voci interiori c'è una quarta voce, che non viene da dentro: **la Sala**, il dungeon stesso. Parla al centro dello schermo, lettera per lettera, con un respiro lento e un alone di luce.
+- **Non nomina mai niente.** Al massimo ripete i nomi che dai tu ("LO CHIAMI PONTE. VA BENE."). È il contrario delle voci interiori.
+- **Parla di rado**, solo nei momenti chiave, e ogni frase una volta sola: all'arrivo ("BENTORNATO."), alla prima caduta, al primo nome, quando un nome marcisce ("TUTTO CIÒ CHE DICI, INVECCHIA."), quando lasci andare ("ECCO. ADESSO MI VEDI."), quando una porta nominata ti riporta indietro ("OGNI PORTA CHE NOMINI È MIA.").
+- **Premia l'inazione:** se resti fermo senza toccare niente per qualche secondo, dice "COSÌ. BRAVO.". È il seme del finale senza input.
+- Tono: calmo, ironico, di chi sa già come va a finire. Non spiega mai le regole.
+- Se un momento passa mentre sta ancora parlando, la frase scade e potrà dirla la prossima volta che capita: la Sala non parla mai fuori contesto.
+
 ## 2. Nominare è controllo, e il controllo marcisce
 - Ciò che è affermato diventa un **oggetto fatto di lettere**: un `MURO` si può scalare, un `PONTE` attraversare, un `MOSTRO` ti insegue davvero.
 - Le parole affermate **decadono** col tempo e con l'uso: le lettere si staccano, cadono con una fisica vera e si ammucchiano.

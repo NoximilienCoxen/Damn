@@ -10,6 +10,7 @@ pub mod livello;
 pub mod mondo;
 pub mod particelle;
 mod render;
+pub mod sala;
 
 use crate::engine::app::{Game, Stats, ALTEZZA, LARGHEZZA};
 use crate::engine::font::Font;
@@ -24,6 +25,7 @@ use lessico::{Natura, Voce};
 use livello::{COLONNE, STANZE, TILE};
 use mondo::{distanza_rect, Evento, Fase, Mondo, Reale};
 use particelle::{Particella, Particelle};
+use sala::{Battuta, Sala};
 
 /// Distanza massima (px) per mettere a fuoco una percezione.
 const DIST_FOCUS: f32 = 30.0;
@@ -63,6 +65,10 @@ pub struct Egresso {
     pub ritorni_all_atrio: u32,
     /// Percezione appena affermata e secondi di lampo rimasti.
     pub lampo: Option<(usize, f32)>,
+    /// La voce del dungeon.
+    pub sala: Sala,
+    /// Secondi senza toccare niente.
+    pub fermo: f32,
     rng: Rng,
     font: Font,
     luce: Framebuffer,
@@ -95,6 +101,8 @@ impl Egresso {
             cadute: 0,
             ritorni_all_atrio: 0,
             lampo: None,
+            sala: Sala::new(),
+            fermo: 0.0,
             rng,
             font: Font::new(),
             luce: Framebuffer::new(LARGHEZZA, ALTEZZA),
@@ -120,6 +128,11 @@ impl Egresso {
         self.focus = None;
         self.lampo = None;
         self.scena = Scena::Gioco;
+        match i {
+            0 if self.ritorni_all_atrio > 0 => self.sala.di(Battuta::RitornoAllAtrio),
+            1 => self.sala.di(Battuta::Abisso),
+            _ => {}
+        }
     }
 
     /// Il protagonista è precipitato: riparte, e una voce commenta.
@@ -130,6 +143,7 @@ impl Egresso {
         self.cadute += 1;
         if self.cadute == 1 {
             self.dici(Voce::Controllo, "QUELLO CHE NON DICO, NON C'È.");
+            self.sala.di(Battuta::PrimaCaduta);
         } else if su_proposta {
             self.dici(Voce::Controllo, "NON L'AVEVO DETTO.");
         } else {
@@ -239,7 +253,17 @@ impl Egresso {
                         });
                     }
                 }
-                Evento::Mutazione { .. } => {}
+                Evento::Mutazione { percetto } => {
+                    // La Sala commenta i nomi che marciscono.
+                    let p = &self.mondo.percetti[percetto as usize];
+                    let pr = &p.def.proposte[p.scelta];
+                    let natura = pr.lemma.stati[p.stato].natura;
+                    if std::ptr::eq(pr.lemma, &lessico::BURRONE) && natura == Natura::Scivolosa {
+                        self.sala.di(Battuta::Burro);
+                    } else if natura == Natura::Vuota {
+                        self.sala.di(Battuta::NomeMarcito);
+                    }
+                }
             }
         }
     }
@@ -331,6 +355,7 @@ impl Game for Egresso {
                 self.messaggio = None;
             }
         }
+        self.sala.update(DT);
 
         match self.scena {
             Scena::Atrio(t) => {
@@ -351,6 +376,16 @@ impl Game for Egresso {
         }
 
         self.t_stanza += DT;
+        if self.t > 3.2 && self.stanza == 0 {
+            self.sala.di(Battuta::Benvenuto);
+        }
+        // Chi non fa niente, a volte, fa la cosa giusta.
+        let attivo =
+            input.any_pressed() || [Key::Left, Key::Right, Key::A, Key::D, Key::Space, Key::W, Key::Up].iter().any(|&k| input.down(k));
+        self.fermo = if attivo { 0.0 } else { self.fermo + DT };
+        if self.fermo > 8.0 && self.stanza > 0 {
+            self.sala.di(Battuta::Fermo);
+        }
         if let Some((i, t)) = self.lampo {
             self.lampo = if t - DT > 0.0 { Some((i, t - DT)) } else { None };
         }
@@ -377,6 +412,7 @@ impl Game for Egresso {
                 if self.mondo.afferma(i, self.giocatore.rect()) {
                     self.usati[0] = self.usati[0].saturating_add(1);
                     self.lampo = Some((i, 0.35));
+                    self.sala.di(Battuta::PrimoNome);
                     self.scintille_su(i, 3);
                 } else {
                     self.dici(Voce::Controllo, "NON QUI. CI SONO IO.");
@@ -384,6 +420,7 @@ impl Game for Egresso {
             }
             if input.pressed(Key::R) {
                 self.mondo.lascia(i);
+                self.sala.di(Battuta::PrimoLasciare);
                 self.usati[2] = self.usati[2].saturating_add(1);
             }
         }

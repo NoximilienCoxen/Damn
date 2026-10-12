@@ -51,6 +51,7 @@ impl Egresso {
         self.disegna_biglietti(fb);
         self.disegna_particelle(fb);
         self.disegna_giocatore(fb);
+        self.disegna_sala(fb);
 
         self.glow.apply(&self.luce, fb, 2, 1.2);
         self.glow.apply(&self.luce, fb, 9, 1.6);
@@ -218,6 +219,26 @@ impl Egresso {
                     fb.blend_pixel(x, y + d * sy, col, 150);
                 }
             }
+        }
+    }
+
+    /// La voce della Sala: al centro, lettera per lettera, con un respiro
+    /// lento e un alone (viene disegnata anche nel buffer della luce).
+    fn disegna_sala(&mut self, fb: &mut Framebuffer) {
+        let Some((testo, n, alpha)) = self.sala.visibile() else { return };
+        if self.scena != Scena::Gioco {
+            return;
+        }
+        const PASSO: i32 = 7;
+        let colore = rgb(226, 220, 255);
+        let larg = testo.chars().count() as i32 * PASSO - 2;
+        let x0 = (LARGHEZZA as i32 - larg) / 2;
+        let a = (alpha * 255.0) as u8;
+        for (i, c) in testo.chars().take(n).enumerate() {
+            let onda = ((self.t * 1.8 + i as f32 * 0.45).sin() * 1.2).round() as i32;
+            let (x, y) = (x0 + i as i32 * PASSO, 62 + onda);
+            self.font.draw_char(fb, x, y, c, colore, a, false);
+            self.font.draw_char(&mut self.luce, x, y, c, scala(colore, 0.45 * alpha), 255, false);
         }
     }
 
