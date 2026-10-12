@@ -5,7 +5,7 @@
 //! ricordi che si sciolgono) finisce qui dentro, e alla fine di ogni
 //! frame questo array viene copiato sullo schermo.
 //!
-//! Leggi `docs/diario/01-framebuffer.md` prima di risolvere gli esercizi.
+//! La spiegazione completa è in `docs/diario/01-framebuffer.md`.
 
 /// Crea un colore a partire da rosso, verde e blu (0-255 ciascuno).
 ///
@@ -66,47 +66,120 @@ impl Framebuffer {
         &self.pixel
     }
 
-    /// ESERCIZIO 01.1: colora *tutti* i pixel con `colore`.
+    /// Tutti i pixel, modificabili. Serve agli effetti che lavorano
+    /// sull'intera immagine (glow, rivelazione).
+    pub fn pixel_mut(&mut self) -> &mut [u32] {
+        &mut self.pixel
+    }
+
+    /// Esercizio 01.1 (soluzione): colora tutti i pixel.
     ///
-    /// `&mut self` significa che il metodo può modificare il framebuffer.
-    /// Suggerimento: un ciclo `for` sugli elementi di `self.pixel`, oppure
-    /// cerca nella documentazione di `slice` un metodo che fa già tutto.
+    /// `slice::fill` scrive lo stesso valore in ogni elemento: è un ciclo
+    /// `for` già scritto (e ottimizzato) dalla libreria standard.
     pub fn clear(&mut self, colore: u32) {
-        let _ = colore; // togli questa riga quando usi `colore`
-        todo!("Esercizio 01.1: clear")
+        self.pixel.fill(colore);
     }
 
-    /// ESERCIZIO 01.2: colora il pixel alla colonna `x` e riga `y`.
+    /// Indice nel Vec del pixel (x, y), oppure `None` se è fuori schermo.
     ///
-    /// Le coordinate sono `i32` (con segno) di proposito: più avanti
-    /// disegneremo sprite che escono in parte dallo schermo, con x o y
-    /// negativi. Se il pixel è fuori dall'immagine, la funzione non deve
-    /// fare niente (e soprattutto non deve andare in panic!).
-    ///
-    /// La formula chiave è nel diario: `indice = y * larghezza + x`.
-    /// Attenzione ai tipi: `self.pixel[...]` vuole un `usize`.
+    /// Il controllo `x < 0` va fatto *prima* della conversione: `-1 as usize`
+    /// non è un errore, è un numero enorme.
+    #[inline]
+    fn indice(&self, x: i32, y: i32) -> Option<usize> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let (x, y) = (x as usize, y as usize);
+        if x >= self.larghezza || y >= self.altezza {
+            return None;
+        }
+        Some(y * self.larghezza + x)
+    }
+
+    /// Esercizio 01.2 (soluzione): colora un pixel, ignorando quelli fuori schermo.
+    #[inline]
     pub fn set_pixel(&mut self, x: i32, y: i32, colore: u32) {
-        let _ = (x, y, colore);
-        todo!("Esercizio 01.2: set_pixel")
+        if let Some(i) = self.indice(x, y) {
+            self.pixel[i] = colore;
+        }
     }
 
-    /// ESERCIZIO 01.3: riempi un rettangolo.
+    /// Il colore del pixel (x, y), o `None` fuori schermo.
+    #[inline]
+    pub fn get_pixel(&self, x: i32, y: i32) -> Option<u32> {
+        self.indice(x, y).map(|i| self.pixel[i])
+    }
+
+    /// Mescola `colore` sopra il pixel esistente: `alpha` 0 = invisibile,
+    /// 255 = opaco.
+    #[inline]
+    pub fn blend_pixel(&mut self, x: i32, y: i32, colore: u32, alpha: u8) {
+        if let Some(i) = self.indice(x, y) {
+            self.pixel[i] = mix(self.pixel[i], colore, alpha);
+        }
+    }
+
+    /// Somma `colore` al pixel esistente (luce che si accumula), saturando a 255.
+    #[inline]
+    pub fn add_pixel(&mut self, x: i32, y: i32, colore: u32) {
+        if let Some(i) = self.indice(x, y) {
+            self.pixel[i] = add(self.pixel[i], colore);
+        }
+    }
+
+    /// Esercizio 01.3 (soluzione, versione "bonus B1"): riempi un rettangolo.
     ///
-    /// L'angolo in alto a sinistra è `(x, y)`, poi `w` pixel di larghezza
-    /// e `h` di altezza. Le parti fuori dallo schermo vanno ignorate, e se
-    /// `w` o `h` sono `<= 0` non si disegna niente.
-    ///
-    /// Prima versione: due `for` annidati che chiamano `set_pixel`.
-    /// Funziona ed è giusta! Il bonus nel diario spiega come renderla veloce.
+    /// Invece di controllare i bordi per ogni pixel, tagliamo il rettangolo
+    /// ai bordi una volta sola e poi riempiamo ogni riga con una slice.
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, colore: u32) {
-        let _ = (x, y, w, h, colore);
-        todo!("Esercizio 01.3: fill_rect")
+        let x0 = x.max(0);
+        let y0 = y.max(0);
+        let x1 = (x + w).min(self.larghezza as i32);
+        let y1 = (y + h).min(self.altezza as i32);
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        for riga in y0 as usize..y1 as usize {
+            let inizio = riga * self.larghezza;
+            self.pixel[inizio + x0 as usize..inizio + x1 as usize].fill(colore);
+        }
     }
 }
 
+/// Canali (r, g, b) di un colore.
+#[inline]
+pub const fn canali(c: u32) -> (u8, u8, u8) {
+    ((c >> 16) as u8, (c >> 8) as u8, c as u8)
+}
+
+/// Mescola due colori: `t` 0 = tutto `a`, 255 = tutto `b`.
+#[inline]
+pub fn mix(a: u32, b: u32, t: u8) -> u32 {
+    let (ar, ag, ab) = canali(a);
+    let (br, bg, bb) = canali(b);
+    let t = t as u32;
+    let m = |x: u8, y: u8| ((x as u32 * (255 - t) + y as u32 * t) / 255) as u8;
+    rgb(m(ar, br), m(ag, bg), m(ab, bb))
+}
+
+/// Somma due colori canale per canale, senza superare 255.
+#[inline]
+pub fn add(a: u32, b: u32) -> u32 {
+    let (ar, ag, ab) = canali(a);
+    let (br, bg, bb) = canali(b);
+    rgb(ar.saturating_add(br), ag.saturating_add(bg), ab.saturating_add(bb))
+}
+
+/// Moltiplica la luminosità di un colore per `k` (0.0 = nero).
+#[inline]
+pub fn scala(c: u32, k: f32) -> u32 {
+    let (r, g, b) = canali(c);
+    let f = |x: u8| (x as f32 * k).clamp(0.0, 255.0) as u8;
+    rgb(f(r), f(g), f(b))
+}
+
 // I test vivono nello stesso file, in un modulo che viene compilato solo
-// con `cargo test`. Sono il tuo "verificatore": quando passano tutti,
-// l'esercizio è risolto. Non modificarli (puoi leggerli, anzi: fallo).
+// con `cargo test`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +261,14 @@ mod tests {
         // Sborda a sinistra, in alto, a destra e in basso.
         fb.fill_rect(-2, -2, 10, 10, VERDE);
         assert!(fb.pixel().iter().all(|&p| p == VERDE));
+    }
+
+    #[test]
+    fn mix_e_add() {
+        assert_eq!(mix(NERO, BIANCO, 0), NERO);
+        assert_eq!(mix(NERO, BIANCO, 255), BIANCO);
+        assert_eq!(add(rgb(200, 10, 0), rgb(100, 10, 5)), rgb(255, 20, 5));
+        assert_eq!(scala(rgb(100, 200, 50), 0.5), rgb(50, 100, 25));
     }
 
     #[test]

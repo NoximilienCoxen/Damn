@@ -1,12 +1,9 @@
-//! `cargo run --bin dump`: disegna una scena di prova e la salva in
-//! `egresso.ppm`, senza bisogno di una finestra.
+//! `cargo run --bin dump`: disegna la scena di prova della lezione 01 e la
+//! salva in `egresso.ppm` (e `egresso.png`), senza bisogno di una finestra.
 //!
 //! Il formato PPM è il più semplice che esista: un'intestazione di testo
-//! e poi i byte R, G, B di ogni pixel. Si apre con GIMP, IrfanView,
-//! l'anteprima di macOS o un qualunque visualizzatore online.
-//!
-//! Funziona solo dopo aver risolto gli esercizi della lezione 01:
-//! prima, i `todo!()` lo fanno fermare con un panic.
+//! e poi i byte R, G, B di ogni pixel. Il PNG lo scrive il nostro encoder
+//! (`engine/png.rs`).
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -37,7 +34,8 @@ fn main() -> std::io::Result<()> {
     }
 
     salva_ppm(&fb, "egresso.ppm")?;
-    println!("Scritto egresso.ppm ({LARGHEZZA}x{ALTEZZA})");
+    egresso::engine::png::save(&fb, "egresso.png")?;
+    println!("Scritti egresso.ppm e egresso.png ({LARGHEZZA}x{ALTEZZA})");
     Ok(())
 }
 

@@ -5,3 +5,4 @@
 //! compresi i programmi in `src/main.rs` e `src/bin/`.
 
 pub mod engine;
+pub mod game;

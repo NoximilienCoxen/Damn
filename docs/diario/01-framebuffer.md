@@ -1,5 +1,7 @@
 # 01: Il framebuffer
 
+> **Nota:** gli esercizi di questa lezione sono ormai risolti in `src/engine/framebuffer.rs`, con la soluzione commentata. Per rifarli come esercizio, sostituisci il corpo dei tre metodi con `todo!()` e fai tornare verdi i test con `cargo test es01`.
+
 ## Perché ci serve
 In EGRESSO il mondo è fatto di lettere che emettono luce, cadono e si sciolgono in particelle, e sotto ogni tanto appare la pixel art del dungeon vero. Ognuna di queste cose, alla fine, è "scrivere numeri giusti nel posto giusto di un array". Lettere (lezione 05), luci (10) e particelle (13) sono tutte costruite sopra i tre metodi che scrivi oggi.
 
