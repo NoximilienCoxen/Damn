@@ -1,5 +1,8 @@
 # 01: Il framebuffer
 
+## Perché ci serve
+In EGRESSO il mondo è fatto di lettere che emettono luce, cadono e si sciolgono in particelle, e sotto ogni tanto appare la pixel art del dungeon vero. Ognuna di queste cose, alla fine, è "scrivere numeri giusti nel posto giusto di un array". Lettere (lezione 05), luci (10) e particelle (13) sono tutte costruite sopra i tre metodi che scrivi oggi.
+
 ## Il concetto: un'immagine è una fila di numeri
 Lo schermo di EGRESSO è largo **320 pixel** e alto **180**. Ogni pixel è un colore, e un colore è un numero. Il **framebuffer** è l'array che contiene tutti quei numeri: 320 × 180 = 57.600 pixel.
 
