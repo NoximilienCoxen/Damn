@@ -102,53 +102,26 @@ const fn st(testo: &'static str, natura: Natura, soglia: f32) -> Stato {
 
 use Natura::*;
 
-pub static PAVIMENTO: Lemma = Lemma {
-    stati: &[st("PAVIMENTO", Solida, 0.5), st("PAVIM NTO", Solida, 0.0)],
-    logorio: 0.0,
-    logorio_uso: 0.0,
-};
+pub static PAVIMENTO: Lemma =
+    Lemma { stati: &[st("PAVIMENTO", Solida, 0.5), st("PAVIM NTO", Solida, 0.0)], logorio: 0.0, logorio_uso: 0.0 };
 
-pub static MURO: Lemma = Lemma {
-    stati: &[st("MURO", Solida, 0.5), st("MURA", Solida, 0.25), st("MORA", Vuota, 0.0)],
-    logorio: 0.0,
-    logorio_uso: 0.0,
-};
+pub static MURO: Lemma =
+    Lemma { stati: &[st("MURO", Solida, 0.5), st("MURA", Solida, 0.25), st("MORA", Vuota, 0.0)], logorio: 0.0, logorio_uso: 0.0 };
 
-pub static PONTE: Lemma = Lemma {
-    stati: &[st("PONTE", Solida, 0.66), st("PON E", Solida, 0.33), st("POSTE", Vuota, 0.0)],
-    logorio: 0.012,
-    logorio_uso: 0.22,
-};
+pub static PONTE: Lemma =
+    Lemma { stati: &[st("PONTE", Solida, 0.66), st("PON E", Solida, 0.33), st("POSTE", Vuota, 0.0)], logorio: 0.012, logorio_uso: 0.22 };
 
-pub static BURRONE: Lemma = Lemma {
-    stati: &[st("BURRONE", Vuota, 0.4), st("BURRO  ", Scivolosa, 0.0)],
-    logorio: 0.05,
-    logorio_uso: 0.0,
-};
+pub static BURRONE: Lemma = Lemma { stati: &[st("BURRONE", Vuota, 0.4), st("BURRO  ", Scivolosa, 0.0)], logorio: 0.05, logorio_uso: 0.0 };
 
-pub static FRIGO: Lemma = Lemma {
-    stati: &[st("FRIGO", Solida, 0.6), st("FR GO", Solida, 0.3), st("FICO ", Vuota, 0.0)],
-    logorio: 0.01,
-    logorio_uso: 0.16,
-};
+pub static FRIGO: Lemma =
+    Lemma { stati: &[st("FRIGO", Solida, 0.6), st("FR GO", Solida, 0.3), st("FICO ", Vuota, 0.0)], logorio: 0.01, logorio_uso: 0.16 };
 
-pub static PORTA: Lemma = Lemma {
-    stati: &[st("PORTA", Porta, 0.5), st("TORTA", Vuota, 0.0)],
-    logorio: 0.03,
-    logorio_uso: 0.0,
-};
+pub static PORTA: Lemma = Lemma { stati: &[st("PORTA", Porta, 0.5), st("TORTA", Vuota, 0.0)], logorio: 0.03, logorio_uso: 0.0 };
 
-pub static TRAPPOLA: Lemma = Lemma {
-    stati: &[st("TRAPPOLA", Trappola, 0.4), st("TRAPPOLA", Trappola, 0.0)],
-    logorio: 0.0,
-    logorio_uso: 0.0,
-};
+pub static TRAPPOLA: Lemma =
+    Lemma { stati: &[st("TRAPPOLA", Trappola, 0.4), st("TRAPPOLA", Trappola, 0.0)], logorio: 0.0, logorio_uso: 0.0 };
 
-pub static ARMADIO: Lemma = Lemma {
-    stati: &[st("ARMADIO", Solida, 0.5), st("ARMADI ", Solida, 0.0)],
-    logorio: 0.01,
-    logorio_uso: 0.05,
-};
+pub static ARMADIO: Lemma = Lemma { stati: &[st("ARMADIO", Solida, 0.5), st("ARMADI ", Solida, 0.0)], logorio: 0.01, logorio_uso: 0.05 };
 
 #[cfg(test)]
 mod tests {

@@ -69,9 +69,8 @@ impl Egresso {
         let mondo = Mondo::new();
         let (realta, realta_luce) = render::genera_realta(&mondo);
         let mut rng = Rng::new(0x5eed);
-        let polvere = (0..90)
-            .map(|_| ((rng.f32() * LARGHEZZA as f32) as i32, (rng.f32() * 130.0) as i32, (10.0 + rng.f32() * 22.0) as u8))
-            .collect();
+        let polvere =
+            (0..90).map(|_| ((rng.f32() * LARGHEZZA as f32) as i32, (rng.f32() * 130.0) as i32, (10.0 + rng.f32() * 22.0) as u8)).collect();
         Egresso {
             mondo,
             giocatore: Giocatore::new(),
@@ -148,14 +147,32 @@ impl Egresso {
             match e {
                 Evento::LetteraCaduta { pos, lettera, voce } => {
                     let vel = Vec2::new(self.rng.range(-15.0, 15.0), self.rng.range(-40.0, -10.0));
-                    self.particelle.spawn(Particella { pos, vel, vita: 6.0, durata: 6.0, colore: voce.colore(), lettera, gravita: 300.0, inclina: voce == Voce::Memoria });
+                    self.particelle.spawn(Particella {
+                        pos,
+                        vel,
+                        vita: 6.0,
+                        durata: 6.0,
+                        colore: voce.colore(),
+                        lettera,
+                        gravita: 300.0,
+                        inclina: voce == Voce::Memoria,
+                    });
                 }
                 Evento::LetteraSciolta { pos, voce, .. } => {
                     for _ in 0..7 {
                         let p = pos + Vec2::new(self.rng.range(0.0, 5.0), self.rng.range(0.0, 7.0));
                         let vel = Vec2::new(self.rng.range(-18.0, 18.0), self.rng.range(-45.0, -8.0));
                         let vita = self.rng.range(0.6, 1.6);
-                        self.particelle.spawn(Particella { pos: p, vel, vita, durata: vita, colore: voce.colore(), lettera: ' ', gravita: -10.0, inclina: false });
+                        self.particelle.spawn(Particella {
+                            pos: p,
+                            vel,
+                            vita,
+                            durata: vita,
+                            colore: voce.colore(),
+                            lettera: ' ',
+                            gravita: -10.0,
+                            inclina: false,
+                        });
                     }
                 }
                 Evento::Mutazione { .. } => {}
@@ -174,9 +191,22 @@ impl Egresso {
             for _ in 0..2 {
                 let a = self.rng.range(0.0, std::f32::consts::TAU);
                 let pos = r.centro + Vec2::new(a.cos(), a.sin()) * (raggio + self.rng.range(-2.0, 3.0));
-                let colore = if self.rng.f32() < 0.6 { crate::engine::framebuffer::rgb(255, 228, 180) } else { crate::engine::framebuffer::rgb(170, 235, 255) };
+                let colore = if self.rng.f32() < 0.6 {
+                    crate::engine::framebuffer::rgb(255, 228, 180)
+                } else {
+                    crate::engine::framebuffer::rgb(170, 235, 255)
+                };
                 let vita = self.rng.range(0.3, 0.8);
-                self.particelle.spawn(Particella { pos, vel: Vec2::new(0.0, -8.0), vita, durata: vita, colore, lettera: ' ', gravita: 0.0, inclina: false });
+                self.particelle.spawn(Particella {
+                    pos,
+                    vel: Vec2::new(0.0, -8.0),
+                    vita,
+                    durata: vita,
+                    colore,
+                    lettera: ' ',
+                    gravita: 0.0,
+                    inclina: false,
+                });
             }
         }
     }
@@ -294,7 +324,17 @@ impl Game for Egresso {
     fn traccia(&self) -> String {
         let g = &self.giocatore;
         let fasi: Vec<String> = self.mondo.percetti.iter().map(|p| format!("{:?}", p.fase).chars().take(4).collect()).collect();
-        format!("pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}", g.pos.x, g.pos.y, g.vel.x, g.vel.y, g.a_terra as u8, self.focus, self.scena, fasi.join(","))
+        format!(
+            "pos {:6.1} {:6.1} vel {:6.1} {:6.1} terra {} focus {:?} {:?} {}",
+            g.pos.x,
+            g.pos.y,
+            g.vel.x,
+            g.vel.y,
+            g.a_terra as u8,
+            self.focus,
+            self.scena,
+            fasi.join(",")
+        )
     }
 
     fn render(&mut self, fb: &mut Framebuffer, stats: &Stats) {

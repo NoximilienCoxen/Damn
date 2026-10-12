@@ -389,7 +389,13 @@ pub fn genera_realta(mondo: &Mondo) -> (Vec<u32>, Vec<u32>) {
                 }
                 Reale::Gradino => {
                     let malta = x % 16 == 0;
-                    let k = if y % t == 0 { 1.5 } else if malta { 0.7 } else { 1.0 };
+                    let k = if y % t == 0 {
+                        1.5
+                    } else if malta {
+                        0.7
+                    } else {
+                        1.0
+                    };
                     (92.0 * k, 82.0 * k, 104.0 * k)
                 }
                 Reale::Varco => {

@@ -99,10 +99,7 @@ impl<G: Game> ApplicationHandler for App<G> {
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Focused(false) => self.input.reset(),
-            WindowEvent::KeyboardInput {
-                event: KeyEvent { physical_key: PhysicalKey::Code(code), state, repeat: false, .. },
-                ..
-            } => {
+            WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(code), state, repeat: false, .. }, .. } => {
                 if let Some(k) = mappa_tasto(code) {
                     self.input.set(k, state == ElementState::Pressed);
                 }
@@ -250,7 +247,15 @@ pub fn parse_script(testo: &str) -> Result<Vec<EventoScript>, String> {
 /// Fa girare il gioco per `frames` passi senza finestra. Salva un PNG in
 /// `cartella` per ogni frame in `scatti` (e ogni `ogni` frame, se > 0).
 #[allow(clippy::too_many_arguments)]
-pub fn run_headless<G: Game>(game: &mut G, frames: u32, script: &[EventoScript], scatti: &[u32], ogni: u32, cartella: &str, traccia: bool) -> std::io::Result<()> {
+pub fn run_headless<G: Game>(
+    game: &mut G,
+    frames: u32,
+    script: &[EventoScript],
+    scatti: &[u32],
+    ogni: u32,
+    cartella: &str,
+    traccia: bool,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(cartella)?;
     let mut fb = Framebuffer::new(LARGHEZZA, ALTEZZA);
     let mut input = Input::new();
