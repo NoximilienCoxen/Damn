@@ -1,0 +1,10 @@
+[package]
+name = "egresso"
+version = "0.1.0"
+edition = "2021"
+default-run = "egresso"
+
+# Per ora nessuna dipendenza: tutto quello che usiamo è scritto da noi.
+# Dalla lezione 02 aggiungeremo solo ciò che serve per parlare col sistema
+# operativo (finestra e audio).
+[dependencies]
