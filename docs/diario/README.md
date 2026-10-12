@@ -10,9 +10,10 @@ Questo diario era nato come corso a lezioni, con esercizi da risolvere. Per ora 
 | 01 | [Il framebuffer](01-framebuffer.md) | pixel, colori, `struct`/`impl`, indici (esercizi risolti in `src/engine/framebuffer.rs`) |
 | 02 | [Il motore minimo](02-motore.md) | finestra, game loop a passo fisso, input, font scritto a mano, glow, PNG, headless |
 | 03 | [Il prototipo](03-prototipo.md) | mondo a due strati, macchina a stati delle percezioni, decadimento, collisioni, rivelazione |
+| 04 | [Revisione del concept](04-revisione.md) | perché il "mondo scritto" è stato messo da parte, le fonti, la nuova direzione |
 
 ## Prossimi capitoli (quando ci arriviamo)
 - Luce vera: ombre proiettate dalle lettere.
 - Lettere come corpi rigidi (rotazione, impilamento).
 - Audio sintetizzato.
-- Più stanze, l'Atrio, il finale senza input.
+- Il nuovo prototipo: la regola dello sforzo, le correnti, gli inchiostri.

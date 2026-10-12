@@ -4,7 +4,7 @@
 
 Un platformer di esplorazione e puzzle, ironico e un po' assurdo. Il protagonista è bendato in un dungeon senza uscita, e il mondo che attraversa è fatto delle parole con cui la sua mente prova a descriverlo. Ha un engine scritto da zero in Rust e **zero file di asset**: font, livelli, pixel art e luce sono generati dal codice.
 
-- Concept e game design: [`docs/CONCEPT.md`](docs/CONCEPT.md)
+- Concept e game design: [`docs/CONCEPT.md`](docs/CONCEPT.md). **In revisione** (v0.3, "la Sala che cresce"): il prototipo descritto qui sotto segue il concept precedente, archiviato in [`docs/archivio/`](docs/archivio/).
 - Diario di bordo (come è fatto l'engine, capitolo per capitolo): [`docs/diario/`](docs/diario/)
 
 ## Stato: prototipo di due stanze
