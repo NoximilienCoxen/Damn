@@ -25,12 +25,27 @@ Si può giocare la meccanica centrale in una stanza:
 | R | lascia andare |
 | F3 | overlay di debug (FPS, tempi) |
 
-## Avvio
+## Provarlo
+
+### Nel browser (anche da telefono)
+Lo stesso codice Rust gira nel browser, compilato in WebAssembly. Sul telefono compaiono i pulsanti touch: ◀ ▶ a sinistra, Q E R e SALTA a destra. Meglio in orizzontale.
 
 ```sh
-cargo run --release      # gioca (finestra 960×540, scala intera)
-cargo test               # test unitari di engine e gioco
+rustup target add wasm32-unknown-unknown   # una volta sola
+./web/build.sh                             # crea web/dist/egresso.html
 ```
+`web/dist/egresso.html` è un unico file autonomo: si apre con doppio clic, oppure si carica su un qualunque hosting statico (itch.io, GitHub Pages).
+
+### Sul computer
+1. Installa Rust: su Windows scarica `rustup-init.exe` da <https://rustup.rs>; su macOS e Linux usa `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`.
+2. Scarica il codice e avvia:
+   ```sh
+   git clone https://github.com/NoximilienCoxen/Damn.git
+   cd Damn
+   git checkout ccr-5fdec350-chubqj
+   cargo run --release      # gioca (finestra 960×540, scala intera)
+   ```
+3. `cargo test` lancia i test unitari di engine e gioco.
 
 Su Linux serve una sessione grafica X11 o Wayland con `libxkbcommon` (presente su qualunque desktop).
 

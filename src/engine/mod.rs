@@ -11,3 +11,6 @@ pub mod input;
 pub mod math;
 pub mod png;
 pub mod time;
+pub mod web;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod window;

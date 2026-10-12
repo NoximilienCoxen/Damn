@@ -6,3 +6,7 @@
 
 pub mod engine;
 pub mod game;
+
+// Nel browser: esporta le funzioni che la pagina web (web/index.html) chiama.
+#[cfg(target_arch = "wasm32")]
+esporta_web!(game::Egresso, game::Egresso::new());

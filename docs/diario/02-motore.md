@@ -5,7 +5,9 @@ L'engine (`src/engine/`) contiene solo ciò che serve per giocare il prototipo. 
 ```
 engine/
   framebuffer.rs  l'immagine 320×180 in memoria + operazioni sui colori
-  app.rs          finestra, game loop, modalità headless
+  app.rs          il trait Game e la modalità headless
+  window.rs       guscio desktop: finestra e game loop (winit + softbuffer)
+  web.rs          guscio browser: il gioco in WebAssembly
   time.rs         passo fisso
   input.rs        tastiera
   font.rs         font 5×7 scritto a mano
@@ -14,7 +16,7 @@ engine/
   png.rs          encoder PNG minimo
 ```
 
-## La finestra (`app.rs`)
+## La finestra (`window.rs`)
 Usiamo solo due librerie esterne: **winit** apre la finestra e riceve gli eventi, **softbuffer** ci dà un array di pixel da riempire. Nient'altro: niente GPU, niente motore grafico.
 
 Il gioco disegna sempre a 320×180. Per mostrarlo su uno schermo grande lo ingrandiamo di un **fattore intero** (×3 su una finestra 960×540, ×6 su un 4K): ogni pixel diventa un quadrato perfetto, senza sfocature. Lo spazio che avanza diventa una banda nera. In `scala_su` prima si allarga una riga in orizzontale, poi la si copia `scala` volte con `copy_within`, che è molto veloce.
@@ -75,3 +77,19 @@ Per salvare screenshot senza librerie. Un PNG è una firma più dei "chunk" (IHD
 - si verifica la grafica dove non c'è uno schermo (per esempio in un server o in CI);
 - un bug si riproduce sempre uguale, perché il gioco è deterministico (stesso seme casuale, passo fisso);
 - con `--trace` si stampa lo stato a ogni frame. È così che abbiamo scoperto che il personaggio "bloccato" contro lo scalino in realtà faceva un salto minuscolo: lo script toccava il tasto per un solo frame, e il salto variabile lo accorciava.
+
+## Il guscio web (`web.rs` e `web/`)
+Lo stesso gioco gira nel browser, compilato per il target `wasm32-unknown-unknown`. Non usiamo librerie di collegamento (wasm-bindgen e simili): il modulo esporta quattro funzioni "C" e la pagina le chiama direttamente.
+
+```
+JS: requestAnimationFrame ─▶ egresso_frame(ms) ─▶ passo fisso + render ─▶ pixel RGBA
+JS: new ImageData(memoria wasm, 320, 180) ─▶ canvas.putImageData ─▶ CSS lo ingrandisce "pixelated"
+JS: tastiera / pulsanti touch ─▶ egresso_key(codice, giù)
+```
+
+- Le dipendenze `winit` e `softbuffer` sono dichiarate solo per i target che *non* sono wasm (`[target.'cfg(not(target_arch = "wasm32"))'.dependencies]`): nel browser la finestra è la pagina.
+- Il gioco concreto si aggancia con una macro (`esporta_web!` in `lib.rs`), così `engine/` continua a non conoscerlo.
+- I pixel non vengono copiati da Rust a JS: la pagina crea l'`ImageData` direttamente sopra la memoria del modulo wasm.
+- `web/build.sh` incorpora il `.wasm` (circa 120 KB) in base64 dentro un unico HTML. Un solo file, nessun server, nessun asset.
+- I pulsanti touch usano i *pointer events*, che gestiscono il multi-touch: si può tenere premuto ▶ e intanto premere SALTA.
+

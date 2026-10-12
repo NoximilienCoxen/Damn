@@ -1,0 +1,285 @@
+<title>EGRESSO</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&display=swap">
+<style>
+  /* Layout: il gioco al centro; in orizzontale i comandi stanno in due
+     colonne ai lati, in verticale sotto lo schermo di gioco.
+     Un solo aspetto, scuro come la stanza: è una scelta, non un tema mancante. */
+  :root {
+    --notte: #06050c;       /* il buio della stanza */
+    --notte-2: #0e0c1a;     /* superfici dei comandi */
+    --controllo: #ffe2aa;   /* la voce del Controllo: affermare */
+    --paura: #ff4854;       /* la voce della Paura */
+    --memoria: #6ee1eb;     /* la voce della Memoria: cambiare voce */
+    --fumo: #968cc8;        /* attributi dei sensi, testo secondario */
+    --bianco: #f4f0ff;      /* lasciar andare: luce senza voce */
+    --pixel: "Silkscreen", ui-monospace, "Courier New", monospace;
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--notte);
+    color: var(--fumo);
+    font-family: var(--pixel);
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  /* Orizzontale: [comandi movimento] [schermo] [comandi azione]. */
+  .gioco {
+    position: relative;
+    height: 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "sx schermo dx";
+    gap: 12px;
+    padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 8px max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .schermo {
+    grid-area: schermo;
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+  }
+  canvas {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    display: block;
+    max-width: 100%;
+  }
+  .sx, .dx { align-self: end; display: flex; gap: 8px; }
+  .sx { grid-area: sx; }
+  .dx { grid-area: dx; display: grid; grid-template-columns: repeat(2, auto); }
+  button.tasto {
+    font: inherit;
+    font-size: 15px;
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    border: 1.5px solid color-mix(in srgb, var(--c, var(--fumo)) 55%, transparent);
+    background: var(--notte-2);
+    color: var(--c, var(--fumo));
+    text-shadow: 0 0 8px color-mix(in srgb, var(--c, var(--fumo)) 70%, transparent);
+    display: grid;
+    place-content: center;
+    gap: 2px;
+    line-height: 1;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+  button.tasto small { display: block; font-size: 7px; letter-spacing: 0.06em; opacity: 0.85; }
+  button.tasto.premuto {
+    background: color-mix(in srgb, var(--c, var(--fumo)) 22%, var(--notte-2));
+    box-shadow: 0 0 18px color-mix(in srgb, var(--c, var(--fumo)) 45%, transparent);
+  }
+  button.tasto:focus-visible { outline: 2px solid var(--controllo); outline-offset: 2px; }
+  .muovi { --c: var(--fumo); font-size: 18px; }
+  .salta { --c: var(--fumo); font-size: 10px; letter-spacing: 0.04em; }
+  .afferma { --c: var(--controllo); }
+  .voce { --c: var(--memoria); }
+  .lascia { --c: var(--bianco); }
+  .barra {
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .barra button {
+    font: inherit;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--fumo);
+    background: var(--notte);
+    border: 1px solid color-mix(in srgb, var(--fumo) 40%, transparent);
+    border-radius: 8px;
+    padding: 6px 9px;
+    cursor: pointer;
+  }
+  .avviso {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    padding-inline: 24px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--controllo);
+    background: var(--notte);
+  }
+  .avviso p { max-width: 32ch; text-wrap: balance; }
+  .avviso .errore { color: var(--paura); }
+
+  /* Verticale: schermo sopra, comandi sotto. */
+  @media (orientation: portrait) {
+    .gioco {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(0, 1fr) auto;
+      grid-template-areas: "schermo schermo" "sx dx";
+      padding-block: max(44px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px));
+      row-gap: 20px;
+    }
+    .schermo { align-self: center; }
+    .sx { justify-self: start; }
+    .dx { justify-self: end; }
+    button.tasto { width: 66px; height: 66px; }
+  }
+  /* Con mouse e tastiera (desktop) i pulsanti non servono. */
+  @media (hover: hover) and (pointer: fine) {
+    .sx, .dx { display: none; }
+    .gioco { grid-template-columns: minmax(0, 1fr); grid-template-areas: "schermo"; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    button.tasto.premuto { box-shadow: none; }
+  }
+</style>
+
+<div class="gioco" id="gioco">
+  <div class="schermo" id="schermo-box">
+    <canvas id="schermo" width="320" height="180" aria-label="EGRESSO: schermo di gioco"></canvas>
+  </div>
+
+  <div class="sx" id="sx">
+    <button class="tasto muovi" data-k="0" aria-label="Sinistra">◀</button>
+    <button class="tasto muovi" data-k="1" aria-label="Destra">▶</button>
+  </div>
+  <div class="dx" id="dx">
+    <button class="tasto voce" data-k="6">Q<small>VOCE</small></button>
+    <button class="tasto afferma" data-k="5">E<small>AFFERMA</small></button>
+    <button class="tasto lascia" data-k="7">R<small>LASCIA</small></button>
+    <button class="tasto salta" data-k="4">SALTA</button>
+  </div>
+
+  <div class="barra">
+    <button id="intero" type="button">SCHERMO INTERO</button>
+  </div>
+
+  <div class="avviso" id="avviso"><p>Accendo la stanza…</p></div>
+</div>
+
+<script>
+(() => {
+  // Il modulo WebAssembly del gioco, incorporato da web/build.sh.
+  const WASM_B64 = "__WASM_BASE64__";
+
+  const W = 320, H = 180;
+  const canvas = document.getElementById("schermo");
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const avviso = document.getElementById("avviso");
+  const box = document.getElementById("schermo-box");
+
+  // Scala intera quando lo spazio basta (pixel perfetti), altrimenti riempie
+  // lo spazio lasciato libero dai comandi.
+  function adatta() {
+    const r = box.getBoundingClientRect();
+    let s = Math.min(r.width / W, r.height / H);
+    if (s >= 2) s = Math.floor(s);
+    s = Math.max(s, 0.5);
+    canvas.style.width = Math.floor(W * s) + "px";
+    canvas.style.height = Math.floor(H * s) + "px";
+  }
+  new ResizeObserver(adatta).observe(box);
+  addEventListener("resize", adatta);
+  adatta();
+
+  // Codici dei tasti: devono coincidere con engine/web.rs.
+  const TASTI = {
+    ArrowLeft: 0, KeyA: 0, ArrowRight: 1, KeyD: 1, ArrowUp: 2, KeyW: 2,
+    ArrowDown: 3, KeyS: 3, Space: 4, KeyE: 5, KeyQ: 6, KeyR: 7, Enter: 8, F3: 9,
+  };
+
+  function errore(msg) {
+    avviso.hidden = false;
+    avviso.innerHTML = '<p class="errore"></p>';
+    avviso.firstChild.textContent = msg;
+  }
+
+  async function avvia() {
+    let ex;
+    try {
+      const bytes = Uint8Array.from(atob(WASM_B64), (c) => c.charCodeAt(0));
+      const { instance } = await WebAssembly.instantiate(bytes, {});
+      ex = instance.exports;
+      ex.egresso_init();
+    } catch (e) {
+      errore("Il gioco non si è avviato: questo browser non supporta WebAssembly o il file è danneggiato. (" + e.message + ")");
+      return;
+    }
+    avviso.hidden = true;
+
+    const premi = (k, giu) => ex.egresso_key(k, giu ? 1 : 0);
+
+    addEventListener("keydown", (e) => {
+      const k = TASTI[e.code];
+      if (k === undefined) return;
+      e.preventDefault();
+      if (!e.repeat) premi(k, true);
+    });
+    addEventListener("keyup", (e) => {
+      const k = TASTI[e.code];
+      if (k === undefined) return;
+      e.preventDefault();
+      premi(k, false);
+    });
+    addEventListener("blur", () => { for (let k = 0; k < 10; k++) premi(k, false); });
+
+    // Pulsanti touch: pointer events, quindi multi-touch (corri e salta insieme).
+    for (const b of document.querySelectorAll("button.tasto")) {
+      const k = Number(b.dataset.k);
+      const giu = (e) => {
+        e.preventDefault();
+        try { b.setPointerCapture(e.pointerId); } catch (_) {}
+        b.classList.add("premuto");
+        premi(k, true);
+      };
+      const su = (e) => {
+        e.preventDefault();
+        b.classList.remove("premuto");
+        premi(k, false);
+      };
+      b.addEventListener("pointerdown", giu);
+      b.addEventListener("pointerup", su);
+      b.addEventListener("pointercancel", su);
+      b.addEventListener("lostpointercapture", su);
+      b.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
+
+    let ultimo = performance.now();
+    function frame(ora) {
+      const dt = Math.min(ora - ultimo, 250);
+      ultimo = ora;
+      ex.egresso_frame(dt);
+      const pixel = new Uint8ClampedArray(ex.memory.buffer, ex.egresso_pixels(), W * H * 4);
+      ctx.putImageData(new ImageData(pixel, W, H), 0, 0);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // Schermo intero: opzionale, alcuni telefoni non lo concedono.
+  const intero = document.getElementById("intero");
+  const el = document.documentElement;
+  if (!el.requestFullscreen && !el.webkitRequestFullscreen) intero.hidden = true;
+  intero.addEventListener("click", async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (el.requestFullscreen) await el.requestFullscreen();
+      else el.webkitRequestFullscreen();
+      try { await screen.orientation.lock("landscape"); } catch (_) {}
+    } catch (_) {
+      intero.hidden = true;
+    }
+    adatta();
+  });
+
+  avvia();
+})();
+</script>

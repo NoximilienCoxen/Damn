@@ -12,7 +12,8 @@
 //!   --out CARTELLA     dove salvare (default "shots")
 //!   --trace            stampa lo stato a ogni frame
 
-use egresso::engine::app::{parse_script, run_headless, run_window};
+use egresso::engine::app::{parse_script, run_headless};
+use egresso::engine::window::run_window;
 use egresso::game::Egresso;
 
 fn main() {
