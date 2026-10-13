@@ -7,7 +7,9 @@
 //! - `egresso_key(codice, giu)`     un tasto (o pulsante touch) giù o su;
 //! - `egresso_frame(ms)`            avanza il tempo e disegna;
 //! - `egresso_pixels()`             puntatore ai pixel RGBA (320×180×4 byte);
-//! - `egresso_comandi()`            quali pulsanti mostrare (maschera di bit).
+//! - `egresso_comandi()`            quali pulsanti mostrare (maschera di bit);
+//! - `egresso_suono(canale)`        parametri per l'audio (0..1);
+//! - `egresso_seme(seme)`           un seme casuale per la partita.
 //!
 //! Il JS crea un `ImageData` direttamente sulla memoria del modulo wasm,
 //! quindi i pixel non vengono mai copiati due volte.
@@ -74,6 +76,14 @@ impl<G: Game> Web<G> {
     pub fn pixels(&self) -> *const u8 {
         self.rgba.as_ptr()
     }
+
+    pub fn suono(&self, canale: u32) -> f32 {
+        self.game.suono(canale)
+    }
+
+    pub fn semina(&mut self, seme: u64) {
+        self.game.semina(seme)
+    }
 }
 
 /// I codici dei tasti usati dalla pagina web (devono coincidere con il JS).
@@ -128,6 +138,20 @@ macro_rules! esporta_web {
         #[no_mangle]
         pub extern "C" fn egresso_comandi() -> u32 {
             WEB.with(|w| w.borrow().as_ref().map_or(u32::MAX, |w| w.comandi()))
+        }
+
+        #[no_mangle]
+        pub extern "C" fn egresso_suono(canale: u32) -> f32 {
+            WEB.with(|w| w.borrow().as_ref().map_or(0.0, |w| w.suono(canale)))
+        }
+
+        #[no_mangle]
+        pub extern "C" fn egresso_seme(seme: u32) {
+            WEB.with(|w| {
+                if let Some(w) = w.borrow_mut().as_mut() {
+                    w.semina(seme as u64)
+                }
+            });
         }
 
         #[no_mangle]

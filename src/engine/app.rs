@@ -31,6 +31,13 @@ pub trait Game {
     fn comandi(&self) -> u32 {
         u32::MAX
     }
+    /// Parametri per l'audio della pagina web (es. volume del vento), 0..1.
+    /// Il gioco decide cosa vuol dire ogni canale.
+    fn suono(&self, _canale: u32) -> f32 {
+        0.0
+    }
+    /// Un seme casuale da fuori (ora del giorno, `Math.random`): ogni partita diversa.
+    fn semina(&mut self, _seme: u64) {}
     /// Una riga di stato per `--trace` in headless (es. posizione del giocatore).
     fn traccia(&self) -> String {
         String::new()

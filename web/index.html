@@ -213,13 +213,16 @@
       const { instance } = await WebAssembly.instantiate(bytes, {});
       ex = instance.exports;
       ex.egresso_init();
+      // Ogni partita una notte diversa: Egresso sarà altrove.
+      ex.egresso_seme((Math.random() * 0xffffffff) >>> 0);
     } catch (e) {
       errore("Il gioco non si è avviato: questo browser non supporta WebAssembly o il file è danneggiato. (" + e.message + ")");
       return;
     }
     avviso.hidden = true;
 
-    const premi = (k, giu) => ex.egresso_key(k, giu ? 1 : 0);
+    const suono = creaSuono();
+    const premi = (k, giu) => { suono.sveglia(); ex.egresso_key(k, giu ? 1 : 0); };
 
     addEventListener("keydown", (e) => {
       const k = TASTI[e.code];
@@ -282,11 +285,93 @@
       ultimo = ora;
       ex.egresso_frame(dt);
       aggiornaPulsanti();
+      suono.aggiorna(ex);
       const pixel = new Uint8ClampedArray(ex.memory.buffer, ex.egresso_pixels(), W * H * 4);
       ctx.putImageData(new ImageData(pixel, W, H), 0, 0);
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
+  }
+
+  // Il suono, sintetizzato (nessun file audio). Il gioco dice quanto soffia
+  // il vento (canale 0), quanto Egresso è vicino (1), quanto buio c'è (2),
+  // quando parla la voce (3). I browser lo accendono solo dopo un tocco.
+  function creaSuono() {
+    let ac = null, vento, filtro, richiamo, maestro, voce = 0;
+    function sveglia() {
+      if (ac) { if (ac.state === "suspended") ac.resume(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ac = new AC();
+      maestro = ac.createGain();
+      maestro.gain.value = 0.9;
+      maestro.connect(ac.destination);
+      // Vento: rumore bianco filtrato.
+      const n = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+      const d = n.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const sorgente = ac.createBufferSource();
+      sorgente.buffer = n;
+      sorgente.loop = true;
+      filtro = ac.createBiquadFilter();
+      filtro.type = "bandpass";
+      filtro.frequency.value = 500;
+      filtro.Q.value = 0.7;
+      vento = ac.createGain();
+      vento.gain.value = 0;
+      sorgente.connect(filtro).connect(vento).connect(maestro);
+      sorgente.start();
+      // Il richiamo: una nota bassa, due voci appena stonate, che pulsa piano.
+      richiamo = ac.createGain();
+      richiamo.gain.value = 0;
+      const passa = ac.createBiquadFilter();
+      passa.type = "lowpass";
+      passa.frequency.value = 400;
+      for (const [f, tipo] of [[55, "sine"], [55.6, "sine"], [82.4, "triangle"]]) {
+        const o = ac.createOscillator();
+        o.type = tipo;
+        o.frequency.value = f;
+        o.connect(passa);
+        o.start();
+      }
+      // Pulsa piano: un tremolo dopo il volume, così da lontano resta muto.
+      const tremolo = ac.createGain();
+      tremolo.gain.value = 1;
+      const lfo = ac.createOscillator();
+      const lfoG = ac.createGain();
+      lfo.frequency.value = 0.13;
+      lfoG.gain.value = 0.35;
+      lfo.connect(lfoG).connect(tremolo.gain);
+      lfo.start();
+      passa.connect(richiamo).connect(tremolo).connect(maestro);
+    }
+    function campana() {
+      const t = ac.currentTime;
+      for (const [f, g, dur] of [[110, 0.35, 6], [165, 0.18, 4], [220.5, 0.1, 3]]) {
+        const o = ac.createOscillator();
+        const a = ac.createGain();
+        o.frequency.value = f;
+        a.gain.setValueAtTime(0, t);
+        a.gain.linearRampToValueAtTime(g, t + 0.02);
+        a.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        // La campana suona nel buio: non passa dal volume che si spegne.
+        o.connect(a).connect(ac.destination);
+        o.start(t);
+        o.stop(t + dur);
+      }
+    }
+    function aggiorna(ex) {
+      if (!ac) return;
+      const t = ac.currentTime;
+      const v = ex.egresso_suono(0), r = ex.egresso_suono(1), b = ex.egresso_suono(2), parla = ex.egresso_suono(3);
+      vento.gain.setTargetAtTime(0.03 + v * 0.22, t, 0.3);
+      filtro.frequency.setTargetAtTime(350 + v * 700, t, 0.5);
+      richiamo.gain.setTargetAtTime(r * 0.35, t, 0.8);
+      maestro.gain.setTargetAtTime(0.9 * (1 - b * 0.85), t, 0.6);
+      if (parla > 0.5 && voce < 0.5) campana();
+      voce = parla;
+    }
+    return { sveglia, aggiorna };
   }
 
   // Schermo intero: opzionale, alcuni telefoni non lo concedono.

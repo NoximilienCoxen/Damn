@@ -22,7 +22,7 @@ Il prototipo chiedeva al giocatore di "lasciar andare" e glielo dava come pulsan
 
 La nuova versione rovescia il problema. Il gioco **non chiede mai** di lasciar andare. Al contrario, la Sala ti **incoraggia** a forzare, collezionare, spingere, come un metroidvania qualunque, e ogni sforzo la allarga. Il lasciar andare non è un comando. Lo scopre il giocatore, attraverso regole fisiche coerenti: correnti, germogli, corridoi che si allungano.
 
-Il nuovo concept è in [`../CONCEPT.md`](../CONCEPT.md).
+Il concept di allora (v0.3) è in [`../archivio/CONCEPT-v0.3.md`](../archivio/CONCEPT-v0.3.md).
 
 ## Cosa resta del lavoro fatto
 Il motore è intatto, e si riusa tutto: framebuffer, luce, font, particelle, versione web, headless. Del gioco restano la Sala e il suo "BENTORNATO.", che nella nuova storia ha finalmente un senso: sei davvero già stato qui.
