@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      # Temporaneo: validazione della pipeline prima del merge su main (M0).
-      - ccr-94004694-d22pll
   workflow_dispatch:
 
 env:
