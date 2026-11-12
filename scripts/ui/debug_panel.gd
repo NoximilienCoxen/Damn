@@ -1,6 +1,6 @@
 class_name DebugPanel
 extends Control
-## Pannello di debug: slider per tutti i parametri di CarTuning, modificabili mentre si guida.
+## Pannello di debug: pulsanti −/+ per tutti i parametri di CarTuning, modificabili mentre si guida.
 ## Sta sul lato destro così il pollice sinistro può continuare a sterzare.
 
 var tuning: CarTuning
@@ -8,7 +8,6 @@ var defaults: CarTuning  ## copia dei default da ripristinare
 
 var _toggle: Button
 var _panel: PanelContainer
-var _sliders: Dictionary = {}  ## proprietà -> HSlider
 var _labels: Dictionary = {}  ## proprietà -> Label
 var _export_text: TextEdit
 var _status: Label
@@ -56,6 +55,7 @@ func setup(t: CarTuning, d: CarTuning) -> void:
 	root.add_child(_status)
 
 	var scroll := ScrollContainer.new()
+	scroll.get_v_scroll_bar().custom_minimum_size.x = 36
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	root.add_child(scroll)
@@ -71,18 +71,19 @@ func setup(t: CarTuning, d: CarTuning) -> void:
 			header.text = "— %s —" % group
 			header.add_theme_font_size_override("font_size", 22)
 			list.add_child(header)
+		# Riga: etichetta (zona di scorrimento) + pulsanti − / +. Niente slider:
+		# il drag sugli slider bloccava lo scorrimento della lista.
+		var row := HBoxContainer.new()
+		list.add_child(row)
 		var label := Label.new()
-		list.add_child(label)
-		var slider := HSlider.new()
-		slider.min_value = p[3]
-		slider.max_value = p[4]
-		slider.step = p[5]
-		slider.value = tuning.get(p[1])
-		slider.custom_minimum_size = Vector2(0, 44)
-		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		slider.value_changed.connect(_on_slider.bind(p[1]))
-		list.add_child(slider)
-		_sliders[p[1]] = slider
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.custom_minimum_size = Vector2(0, 64)
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(label)
+		var step := maxf(p[5], snappedf((p[4] - p[3]) / 25.0, p[5]))
+		row.add_child(_make_step_button("−", p[1], -step, p[3], p[4], p[5]))
+		row.add_child(_make_step_button("+", p[1], step, p[3], p[4], p[5]))
 		_labels[p[1]] = label
 		_update_label(p[1])
 
@@ -108,9 +109,17 @@ func _make_button(text: String, callback: Callable) -> Button:
 	return b
 
 
-func _on_slider(value: float, prop: String) -> void:
-	tuning.set(prop, value)
-	_update_label(prop)
+func _make_step_button(text: String, prop: String, delta: float, lo: float, hi: float, step: float) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.add_theme_font_size_override("font_size", 30)
+	b.custom_minimum_size = Vector2(64, 64)
+	b.pressed.connect(
+		func() -> void:
+			tuning.set(prop, clampf(snappedf(tuning.get(prop) + delta, step), lo, hi))
+			_update_label(prop)
+	)
+	return b
 
 
 func _update_label(prop: String) -> void:
@@ -123,7 +132,6 @@ func _update_label(prop: String) -> void:
 func _on_reset() -> void:
 	tuning.copy_from(defaults)
 	for p in CarTuning.PARAMS:
-		_sliders[p[1]].set_value_no_signal(tuning.get(p[1]))
 		_update_label(p[1])
 	_status.text = "Valori ripristinati"
 
