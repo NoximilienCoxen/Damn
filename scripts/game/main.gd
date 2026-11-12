@@ -7,6 +7,8 @@ const TUNING_PATH := "res://tuning/default_tuning.tres"
 @onready var car: CarController = $Car
 @onready var car_input: CarInput = $CarInput
 @onready var cam: FollowCamera = $FollowCamera
+@onready var feedback: Feedback = $Feedback
+@onready var speed_lines: SpeedLines = $UI/SpeedLines
 @onready var hud: Hud = $UI/Hud
 @onready var touch: TouchControls = $UI/TouchControls
 @onready var debug_panel: DebugPanel = $UI/DebugPanel
@@ -28,6 +30,9 @@ func _ready() -> void:
 	cam.tuning = tuning
 	cam.snap()
 
+	feedback.setup(car, cam, tuning)
+	speed_lines.car = car
+	speed_lines.tuning = tuning
 	hud.car = car
 	touch.car_input = car_input
 	touch.tuning = tuning

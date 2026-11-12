@@ -157,6 +157,11 @@ func _build_road_mesh() -> void:
 		var j := (i + 1) % count
 		var c := Color(0.27, 0.27, 0.29) if (i / 3) % 2 == 0 else Color(0.31, 0.31, 0.33)
 		_add_quad(st, _edge(i, -1.0), _edge(i, 1.0), _edge(j, -1.0), _edge(j, 1.0), c)
+		if (i / 5) % 2 == 0:  # linea centrale tratteggiata: 10 m pieni, 10 m vuoti
+			var lift := Vector3.UP * 0.08
+			var r0 := _right_of(i) * 0.25
+			var r1 := _right_of(j) * 0.25
+			_add_quad(st, _pts[i] - r0 + lift, _pts[i] + r0 + lift, _pts[j] - r1 + lift, _pts[j] + r1 + lift, Color(0.92, 0.92, 0.92))
 	st.generate_normals()
 	_mesh_instance(st.commit()).name = "Road"
 

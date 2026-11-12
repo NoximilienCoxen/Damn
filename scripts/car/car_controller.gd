@@ -6,6 +6,9 @@ extends CharacterBody3D
 enum State { GRIP, DRIFT, IMPACT, CRASHED, RESPAWN }
 
 signal state_changed(new_state: State)
+## Contatto con un muro (anche sfregamento): impact = componente normale della velocità (m/s).
+signal wall_contact(impact: float, hit_speed: float)
+signal crashed(impact: float)
 
 const CAR_HEIGHT := 0.6  ## quota fissa dell'origine dell'auto
 const IMPACT_STATE_TIME := 0.25
@@ -17,8 +20,11 @@ const IMPACT_STATE_TIME := 0.25
 var state: State = State.GRIP
 var speed := 0.0  ## velocità avanti (m/s), per HUD e camera
 var long_accel := 0.0  ## accelerazione avanti istantanea (m/s²), per la camera
+var yaw_norm := 0.0  ## rotazione corrente / rotazione massima, -1..1 (negativo = destra), per camera e carrozzeria
 
 var _yaw := 0.0
+var _yaw_rate := 0.0
+var _tilt := Vector2.ZERO  ## x = beccheggio, y = rollio (rad, smussati)
 var _state_timer := 0.0
 var _crash_speed := 0.0
 var _materials: Array[StandardMaterial3D] = []
@@ -44,6 +50,8 @@ func place_at(pos: Vector3, forward: Vector3, start_speed := 0.0) -> void:
 	velocity = forward * start_speed
 	speed = start_speed
 	long_accel = 0.0
+	_yaw_rate = 0.0
+	yaw_norm = 0.0
 
 
 func _physics_process(delta: float) -> void:
@@ -53,6 +61,8 @@ func _physics_process(delta: float) -> void:
 			velocity = Vector3.ZERO
 			speed = 0.0
 			long_accel = 0.0
+			yaw_norm = 0.0
+			_yaw_rate = 0.0
 			if _state_timer <= 0.0:
 				_respawn()
 		_:
@@ -63,7 +73,12 @@ func _drive(delta: float) -> void:
 	# 1. Sterzo: la rotazione dipende dalla velocità (più veloce = meno sterzo).
 	var speed_ratio := clampf(speed / tuning.max_speed, 0.0, 1.0)
 	var authority := lerpf(1.0, 1.0 - tuning.steer_speed_reduction, speed_ratio)
-	_yaw -= car_input.steer * deg_to_rad(tuning.turn_rate) * authority * delta
+	# La rotazione segue lo sterzo con un po' di inerzia: dà peso e smorza il nervosismo.
+	var max_rate := deg_to_rad(tuning.turn_rate)
+	var target_rate := -car_input.steer * max_rate * authority
+	_yaw_rate = lerpf(_yaw_rate, target_rate, 1.0 - exp(-tuning.yaw_response * delta))
+	_yaw += _yaw_rate * delta
+	yaw_norm = _yaw_rate / max_rate
 	rotation.y = _yaw
 
 	# 2. Componenti della velocità nel nuovo riferimento dell'auto.
@@ -75,6 +90,8 @@ func _drive(delta: float) -> void:
 	# 3. Accelerazione automatica (e frenata passiva se sopra il massimo).
 	var old_vf := vf
 	vf = move_toward(vf, tuning.max_speed, tuning.accel * delta)
+	# Curvare costa velocità: l'esterno della curva si paga, il rettilineo la ridà.
+	vf = maxf(vf - tuning.turn_speed_loss * absf(yaw_norm) * speed_ratio * delta, 0.0)
 	long_accel = (vf - old_vf) / delta
 
 	# 4. Aderenza: la velocità laterale viene smorzata (in M2 il DRIFT abbassa questo valore).
@@ -90,6 +107,8 @@ func _drive(delta: float) -> void:
 	velocity.y = 0.0
 	_handle_walls(pre_velocity, delta)
 	speed = maxf(velocity.dot(_forward()), 0.0)
+
+	_update_tilt(delta)
 
 	# 6. Timer degli stati.
 	if state == State.IMPACT and _state_timer <= 0.0:
@@ -111,8 +130,9 @@ func _handle_walls(pre_velocity: Vector3, delta: float) -> void:
 		impact = maxf(impact, -pre_velocity.dot(n.normalized()))
 
 	if impact > tuning.crash_threshold and state != State.RESPAWN:
-		_crash(pre_velocity.length())
+		_crash(pre_velocity.length(), impact)
 		return
+	wall_contact.emit(impact, pre_velocity.length())
 
 	# Sfregamento: rallenta e devia, non ferma.
 	velocity *= maxf(0.0, 1.0 - tuning.wall_scrape_loss * delta)
@@ -126,7 +146,8 @@ func _handle_walls(pre_velocity: Vector3, delta: float) -> void:
 		_state_timer = IMPACT_STATE_TIME
 
 
-func _crash(pre_speed: float) -> void:
+func _crash(pre_speed: float, impact: float) -> void:
+	crashed.emit(impact)
 	_crash_speed = pre_speed
 	velocity = Vector3.ZERO
 	_state_timer = tuning.crash_wait
@@ -140,6 +161,17 @@ func _respawn() -> void:
 	place_at(track_info.point_at(off), forward, _crash_speed * tuning.respawn_speed_pct / 100.0)
 	_state_timer = tuning.immunity_time
 	_set_state(State.RESPAWN)
+
+
+## Rollio e beccheggio solo visivi (non influenzano la simulazione).
+func _update_tilt(delta: float) -> void:
+	var lateral := yaw_norm * clampf(speed / tuning.max_speed, 0.0, 1.0)
+	var target := Vector2(
+		clampf(long_accel / tuning.accel, -1.0, 1.0) * deg_to_rad(tuning.body_pitch),
+		-lateral * deg_to_rad(tuning.body_roll)
+	)
+	_tilt = _tilt.lerp(target, 1.0 - exp(-10.0 * delta))
+	$Visual.rotation = Vector3(_tilt.x, 0.0, _tilt.y)
 
 
 func _set_state(new_state: State) -> void:
