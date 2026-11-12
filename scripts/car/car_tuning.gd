@@ -10,11 +10,13 @@ extends Resource
 @export var steer_deadzone_pct := 0.5  ## zona morta, % larghezza schermo
 @export var steer_speed_reduction := 0.35  ## quanto sterzo si perde alla velocità massima (0..1)
 @export var turn_rate := 140.0  ## velocità di rotazione massima a bassa velocità (gradi/s)
+@export var yaw_response := 9.0  ## quanto in fretta la rotazione segue lo sterzo (1/s): più basso = più peso
 
 # --- Motore e aderenza ---
 @export var max_speed := 32.0  ## m/s
 @export var accel := 12.0  ## m/s²
-@export var grip_lateral := 12.0  ## smorzamento velocità laterale in GRIP (1/s)
+@export var grip_lateral := 7.0  ## smorzamento velocità laterale in GRIP (1/s)
+@export var turn_speed_loss := 20.0  ## m/s² persi con sterzo a fondo a velocità massima: curvare costa velocità
 
 # --- Muri ---
 @export var wall_scrape_loss := 1.5  ## frazione di velocità persa al secondo durante lo sfregamento
@@ -34,6 +36,15 @@ extends Resource
 @export var cam_height := 2.8
 @export var cam_follow_rate := 5.0  ## quanto in fretta la camera segue la direzione dell'auto (1/s)
 @export var cam_accel_stretch := 2.0  ## m di distanza extra in accelerazione
+@export var cam_roll := 4.0  ## gradi di inclinazione della camera in curva
+@export var cam_shake := 0.3  ## tremolio della camera alle alte velocità
+
+# --- Feedback ---
+@export var body_roll := 7.0  ## gradi di rollio della carrozzeria in curva
+@export var body_pitch := 3.0  ## gradi di beccheggio in accelerazione
+@export var speed_lines := 0.7  ## intensità delle linee di velocità (0 = spente)
+@export var engine_volume_db := -14.0
+@export var vibration := 1.0  ## intensità vibrazione (0 = spenta)
 
 ## Tabella per il pannello di debug: [gruppo, proprietà, etichetta, min, max, step]
 const PARAMS: Array = [
@@ -42,8 +53,10 @@ const PARAMS: Array = [
 	["Sterzo", "steer_deadzone_pct", "Zona morta (% schermo)", 0.0, 8.0, 0.1],
 	["Sterzo", "steer_speed_reduction", "Riduzione con la velocità", 0.0, 0.9, 0.01],
 	["Sterzo", "turn_rate", "Rotazione max (°/s)", 30.0, 240.0, 1.0],
+	["Sterzo", "yaw_response", "Prontezza rotazione (basso = peso)", 2.0, 30.0, 0.5],
 	["Motore", "max_speed", "Velocità max (m/s)", 15.0, 80.0, 0.5],
 	["Motore", "accel", "Accelerazione (m/s²)", 3.0, 40.0, 0.5],
+	["Motore", "turn_speed_loss", "Perdita velocità in curva", 0.0, 40.0, 1.0],
 	["Aderenza", "grip_lateral", "Aderenza laterale GRIP", 1.0, 40.0, 0.5],
 	["Muri", "wall_scrape_loss", "Perdita sfregamento (1/s)", 0.0, 6.0, 0.1],
 	["Muri", "wall_align", "Allineamento al muro", 0.0, 20.0, 0.5],
@@ -58,6 +71,13 @@ const PARAMS: Array = [
 	["Camera", "cam_height", "Altezza", 1.0, 8.0, 0.1],
 	["Camera", "cam_follow_rate", "Elasticità rotazione", 1.0, 20.0, 0.5],
 	["Camera", "cam_accel_stretch", "Elasticità accelerazione (m)", 0.0, 6.0, 0.1],
+	["Camera", "cam_roll", "Inclinazione in curva (°)", 0.0, 12.0, 0.5],
+	["Camera", "cam_shake", "Tremolio", 0.0, 1.0, 0.05],
+	["Feedback", "body_roll", "Rollio carrozzeria (°)", 0.0, 20.0, 0.5],
+	["Feedback", "body_pitch", "Beccheggio (°)", 0.0, 10.0, 0.5],
+	["Feedback", "speed_lines", "Linee di velocità", 0.0, 1.0, 0.05],
+	["Feedback", "engine_volume_db", "Volume motore (dB)", -40.0, 0.0, 1.0],
+	["Feedback", "vibration", "Vibrazione", 0.0, 1.0, 0.1],
 ]
 
 
