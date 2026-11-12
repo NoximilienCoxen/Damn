@@ -38,10 +38,11 @@ func _physics_process(_delta: float) -> bool:
 			if saw_crash:
 				return _fail("schianto con sterzo a fondo e soglia di default: soglia troppo bassa")
 			phase = 3
-			main.tuning.crash_threshold = 3.0  # forza lo schianto per provare crash+respawn
+			# Forza lo schianto: soglia bassa e auto puntata di traverso contro il muro.
+			main.tuning.crash_threshold = 3.0
+			input.touch_steer = 0.0
+			car.place_at(car.global_position, Vector3(0.0, 0.0, 1.0), 20.0)
 	if phase == 3:
-		input.touch_active = true
-		input.touch_steer = 1.0
 		if saw_respawn:
 			print("SMOKE_OK crash e respawn funzionano (frame %d)" % frames)
 			quit(0)
