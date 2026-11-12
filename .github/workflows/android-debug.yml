@@ -25,6 +25,13 @@ jobs:
           mkdir -v -p ~/.local/share/godot/export_templates/
           mv /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
 
+      - name: Copia le impostazioni editor (SDK Android e Java)
+        # In GitHub Actions HOME non è /root: senza questo Godot non trova Java/SDK.
+        run: |
+          mkdir -p ~/.config
+          cp -r /root/.config/godot ~/.config/
+          cat ~/.config/godot/editor_settings-*.tres
+
       - name: Genera keystore di debug
         run: |
           keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android \
