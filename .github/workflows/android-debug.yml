@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - m1-guida-base # temporaneo: validazione durante lo sviluppo della M1
   pull_request:
     branches:
       - main

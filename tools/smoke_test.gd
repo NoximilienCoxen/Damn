@@ -15,11 +15,12 @@ func _initialize() -> void:
 	main = (load("res://scenes/main.tscn") as PackedScene).instantiate()
 	root.add_child(main)
 	car = main.get_node("Car")
-	start_pos = car.global_position
 
 
 func _physics_process(_delta: float) -> bool:
 	frames += 1
+	if frames == 1:
+		start_pos = car.global_position
 	var input: CarInput = main.get_node("CarInput")
 	if phase == 1 and frames == 600:  # 5 s dritto
 		var moved := car.global_position.distance_to(start_pos)

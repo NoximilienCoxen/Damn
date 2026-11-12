@@ -3,7 +3,13 @@
 Prototipo di un racer arcade per smartphone (Godot 4.7, orizzontale, renderer Mobile).
 Design in [`docs/`](docs/): [GDD](docs/GDD.md), [spec del prototipo](docs/prototipo-guida-spec.md), [setup e build Android](docs/setup-repo-e-build-android.md).
 
-Stato: **M0** — progetto vuoto + pipeline APK.
+Stato: **M1** — auto che si guida (sterzo touch, muri, schianto/respawn, pannello di debug).
+
+## Controlli
+
+- Telefono: tocca la metà sinistra dello schermo e trascina in orizzontale per sterzare (il punto del primo tocco è il centro). L'accelerazione è automatica.
+- PC: frecce o A/D; il mouse emula il touch.
+- Pannello di debug: tocca ⚙ in alto a destra. Gli slider cambiano i parametri mentre guidi; *Copia valori* mette i numeri negli appunti, *Ripristina* torna ai default.
 
 ## Scaricare l'APK
 
