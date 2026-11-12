@@ -6,6 +6,8 @@
 [ext_resource type="Script" path="res://scripts/car/car_input.gd" id="4_input"]
 [ext_resource type="Script" path="res://scripts/car/follow_camera.gd" id="5_cam"]
 [ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="6_hud"]
+[ext_resource type="PackedScene" path="res://scenes/ui/speed_lines.tscn" id="9_lines"]
+[ext_resource type="Script" path="res://scripts/game/feedback.gd" id="10_fb"]
 [ext_resource type="PackedScene" path="res://scenes/ui/touch_controls.tscn" id="7_touch"]
 [ext_resource type="PackedScene" path="res://scenes/ui/debug_panel.tscn" id="8_debug"]
 
@@ -22,7 +24,12 @@ script = ExtResource("4_input")
 [node name="FollowCamera" type="Camera3D" parent="."]
 script = ExtResource("5_cam")
 
+[node name="Feedback" type="Node" parent="."]
+script = ExtResource("10_fb")
+
 [node name="UI" type="CanvasLayer" parent="."]
+
+[node name="SpeedLines" parent="UI" instance=ExtResource("9_lines")]
 
 [node name="Hud" parent="UI" instance=ExtResource("6_hud")]
 
