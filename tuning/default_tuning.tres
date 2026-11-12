@@ -4,17 +4,17 @@
 
 [resource]
 script = ExtResource("1_tuning")
-steer_travel_pct = 18.0
-steer_expo = 1.6
-steer_deadzone_pct = 2.0
-steer_speed_reduction = 0.5
-turn_rate = 120.0
-max_speed = 40.0
-accel = 14.0
+steer_travel_pct = 12.0
+steer_expo = 1.2
+steer_deadzone_pct = 0.5
+steer_speed_reduction = 0.35
+turn_rate = 140.0
+max_speed = 32.0
+accel = 12.0
 grip_lateral = 12.0
 wall_scrape_loss = 1.5
 wall_align = 6.0
-crash_threshold = 18.0
+crash_threshold = 28.0
 crash_wait = 1.8
 respawn_speed_pct = 70.0
 respawn_back = 8.0

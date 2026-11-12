@@ -5,21 +5,21 @@ extends Resource
 ## I default sono duplicati in tuning/default_tuning.tres (quello è il file da aggiornare con i valori messi a punto).
 
 # --- Sterzo ---
-@export var steer_travel_pct := 18.0  ## corsa massima, % larghezza schermo
-@export var steer_expo := 1.6  ## esponente curva di risposta (1 = lineare)
-@export var steer_deadzone_pct := 2.0  ## zona morta, % larghezza schermo
-@export var steer_speed_reduction := 0.5  ## quanto sterzo si perde alla velocità massima (0..1)
-@export var turn_rate := 120.0  ## velocità di rotazione massima a bassa velocità (gradi/s)
+@export var steer_travel_pct := 12.0  ## corsa massima, % larghezza schermo
+@export var steer_expo := 1.2  ## esponente curva di risposta (1 = lineare)
+@export var steer_deadzone_pct := 0.5  ## zona morta, % larghezza schermo
+@export var steer_speed_reduction := 0.35  ## quanto sterzo si perde alla velocità massima (0..1)
+@export var turn_rate := 140.0  ## velocità di rotazione massima a bassa velocità (gradi/s)
 
 # --- Motore e aderenza ---
-@export var max_speed := 40.0  ## m/s
-@export var accel := 14.0  ## m/s²
+@export var max_speed := 32.0  ## m/s
+@export var accel := 12.0  ## m/s²
 @export var grip_lateral := 12.0  ## smorzamento velocità laterale in GRIP (1/s)
 
 # --- Muri ---
 @export var wall_scrape_loss := 1.5  ## frazione di velocità persa al secondo durante lo sfregamento
 @export var wall_align := 6.0  ## quanto in fretta l'auto si allinea al muro (1/s)
-@export var crash_threshold := 18.0  ## velocità d'impatto contro il muro (m/s, componente normale) oltre cui è schianto
+@export var crash_threshold := 28.0  ## velocità d'impatto contro il muro (m/s, componente normale) oltre cui è schianto
 
 # --- Schianto e respawn ---
 @export var crash_wait := 1.8  ## s

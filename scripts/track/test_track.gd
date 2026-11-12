@@ -4,7 +4,7 @@ extends Node3D
 ## Rettilineo lungo, curva larga, curva media, chicane, gomito, tratto stretto.
 ## Tutto è generato qui da una lista di segmenti, così la larghezza è un parametro.
 
-@export var road_width := 14.0
+@export var road_width := 18.0
 @export var narrow_factor := 0.6  ## larghezza del tratto stretto rispetto a road_width
 @export var wall_height := 2.0
 @export var wall_thickness := 1.0
