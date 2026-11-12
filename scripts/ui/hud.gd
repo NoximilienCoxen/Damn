@@ -21,4 +21,4 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if car == null:
 		return
-	_label.text = "%d km/h  %s" % [roundi(car.speed * 3.6), CarController.State.keys()[car.state]]
+	_label.text = "%d km/h  %s\nsterzo %+.2f" % [roundi(car.speed * 3.6), CarController.State.keys()[car.state], car.car_input.steer]
