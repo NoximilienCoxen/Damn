@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/track/test_track.gd" id="1_track"]
+
+[node name="TestTrack" type="Node3D"]
+script = ExtResource("1_track")

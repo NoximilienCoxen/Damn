@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+      - m1-guida-base # temporaneo: validazione durante lo sviluppo della M1
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 env:
@@ -39,6 +43,12 @@ jobs:
       - name: Importa il progetto
         run: godot --headless --verbose --import || true
 
+      - name: Smoke test (scene, guida, schianto e respawn)
+        run: |
+          godot --headless --fixed-fps 120 --script res://tools/smoke_test.gd 2>&1 | tee smoke.log
+          grep -q SMOKE_OK smoke.log
+          ! grep -E "SCRIPT ERROR|Parse Error" smoke.log
+
       - name: Esporta APK
         env:
           GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ runner.temp }}/debug.keystore
@@ -58,6 +68,7 @@ jobs:
   publish:
     name: Pubblica pre-release "latest"
     needs: export-android
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
